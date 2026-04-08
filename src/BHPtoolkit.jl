@@ -28,5 +28,9 @@ include("amplitudes.jl")
 include("hypergeometric.jl")
 include("radial_in.jl")
 include("radial_up.jl")
+include("waveform.jl")
+
+using .Waveform
+export WaveformParams, compute_waveform, green_function
 
 end  # module BHPtoolkit
