@@ -1,0 +1,25 @@
+# Generated output
+*.pdf
+*.png
+*.svg
+*.gif
+
+# Data files
+*.jld2
+*.h5
+*.hdf5
+*.dat
+*.csv
+
+# Julia artifacts
+*.ji
+*.so
+*.dylib
+Manifest.toml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
