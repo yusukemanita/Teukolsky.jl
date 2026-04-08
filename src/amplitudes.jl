@@ -1,0 +1,295 @@
+# ============================================================
+#  Asymptotic amplitudes A^ν_±, Eqs. (157)-(158)
+# ============================================================
+
+function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
+    s, ϵ = p.s, p.ϵ
+
+    prefactor = exp(-π*ϵ/2) * exp(π*im*(ν+1-s)/2) *
+                2.0^(-1+s-im*ϵ) *
+                gamma(ν + 1 - s + im*ϵ) / gamma(ν + 1 + s - im*ϵ)
+
+    Σ = sum(fn[n] for n in nmin:nmax)
+
+    return prefactor * Σ
+end
+
+function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
+    s, ϵ = p.s, p.ϵ
+
+    prefactor = 2.0^(-1-s+im*ϵ) *
+                exp(-π*im*(ν+1+s)/2) *
+                exp(-π*ϵ/2)
+
+    Σ = sum(
+        begin
+            fn_n = fn[n]
+            iszero(fn_n) ? complex(0.0) :
+            (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
+                     pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
+        end
+        for n in nmin:nmax
+    )
+
+    return prefactor * Σ
+end
+
+# ============================================================
+#  Matching coefficient K_ν, Eq. (165)
+# ============================================================
+
+function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
+    s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
+    ϵp = p.ϵp
+
+    num_sum = complex(0.0)
+    for n in r:nmax
+        fn_n = fn[n]
+        iszero(fn_n) && continue
+        term = (-1)^n * gamma(complex(n + r + 2ν + 1)) / gamma(Float64(n - r + 1)) *
+               gamma(complex(n + ν + 1 + s + im*ϵ)) /
+               gamma(complex(n + ν + 1 - s - im*ϵ)) *
+               gamma(complex(n + ν + 1 + im*τ)) /
+               gamma(complex(n + ν + 1 - im*τ)) *
+               fn_n
+        num_sum += term
+    end
+
+    den_sum = complex(0.0)
+    for n in -nmax:r
+        fn_n = fn[n]
+        iszero(fn_n) && continue
+        term = (-1)^n / gamma(Float64(r - n + 1)) /
+               pochhammer(r + 2ν + 2, n) *
+               pochhammer(ν + 1 + s - im*ϵ, n) /
+               pochhammer(ν + 1 - s + im*ϵ, n) *
+               fn_n
+        den_sum += term
+    end
+
+    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - ν - r) * 2.0^(-s) /
+                im^r *
+                gamma(complex(1 - s - 2im*ϵp)) *
+                gamma(complex(r + 2ν + 2)) /
+                (gamma(complex(r + ν + 1 - s + im*ϵ)) *
+                 gamma(complex(r + ν + 1 + im*τ)) *
+                 gamma(complex(r + ν + 1 + s + im*ϵ)))
+
+    return prefactor * num_sum / den_sum
+end
+
+# ============================================================
+#  Full asymptotic amplitudes, Eqs. (167)-(170)
+# ============================================================
+
+"""
+    compute_amplitudes(s, l, m, a, ω; nmax=40, nmax_cf=150)
+
+Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
+Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
+"""
+function compute_amplitudes(s::Int, l::Int, m::Int, a::Float64, ω;
+                            nmax::Int=40, nmax_cf::Int=150)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
+
+    fn = compute_fn(p, ν; nmax=nmax)
+
+    Ap = compute_Aplus(p, ν, fn; nmax=nmax)
+    Am = compute_Aminus(p, ν, fn; nmax=nmax)
+
+    Kν = compute_Knu(p, ν, fn; nmax=nmax)
+
+    fn_negν = compute_fn(p, -ν - 1; nmax=nmax)
+    Kνn = compute_Knu(p, -ν - 1, fn_negν; nmax=nmax)
+
+    ω_c = p.ω
+    ϵ = p.ϵ
+    κ = p.κ
+    phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+    phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+
+    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase
+
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj
+
+    Σfn = sum(fn[n] for n in -nmax:nmax)
+    Btrans = (ϵ * κ / ω_c)^(2s) *
+             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+
+    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
+
+    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+            ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
+end
+
+# ============================================================
+#  ν-fixed mode
+# ============================================================
+
+"""
+    compute_amplitudes_nufixed(s, l, m, a, ω, ν_fixed; nmax=40)
+
+Same as `compute_amplitudes` but with ν fixed (no ν solver).
+"""
+function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a::Float64, ω,
+                                     ν_fixed; nmax::Int=40)
+    p = MSTParams(s, l, m, a, ω)
+    δ = 1e-10
+    ν = complex(ν_fixed + δ)
+
+    fn = compute_fn(p, ν; nmax=nmax)
+
+    Ap = compute_Aplus(p, ν, fn; nmax=nmax)
+    Am = compute_Aminus(p, ν, fn; nmax=nmax)
+
+    Kν = compute_Knu(p, ν, fn; nmax=nmax)
+
+    ν_neg = -ν - 1
+    fn_negν = compute_fn(p, ν_neg; nmax=nmax)
+    Kνn = compute_Knu(p, ν_neg, fn_negν; nmax=nmax)
+
+    ω_c = p.ω
+    ϵ = p.ϵ
+    κ = p.κ
+    phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+    phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+
+    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj
+
+    Σfn = sum(fn[n] for n in -nmax:nmax)
+    Btrans = (ϵ * κ / ω_c)^(2s) *
+             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
+
+    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+            ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
+end
+
+# ============================================================
+#  Meromorphic K_ν
+# ============================================================
+
+function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
+    s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
+    ϵp = p.ϵp
+
+    num_sum = complex(0.0)
+    for n in r:nmax
+        fn_n = fn[n]
+        iszero(fn_n) && continue
+        term = (-1)^n * gamma(complex(n + r + 2ν + 1)) / gamma(Float64(n - r + 1)) *
+               gamma(complex(n + ν + 1 + s + im*ϵ)) /
+               gamma(complex(n + ν + 1 - s - im*ϵ)) *
+               gamma(complex(n + ν + 1 + im*τ)) /
+               gamma(complex(n + ν + 1 - im*τ)) *
+               fn_n
+        num_sum += term
+    end
+
+    den_sum = complex(0.0)
+    for n in -nmax:r
+        fn_n = fn[n]
+        iszero(fn_n) && continue
+        term = (-1)^n / gamma(Float64(r - n + 1)) /
+               pochhammer(r + 2ν + 2, n) *
+               pochhammer(ν + 1 + s - im*ϵ, n) /
+               pochhammer(ν + 1 - s + im*ϵ, n) *
+               fn_n
+        den_sum += term
+    end
+
+    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - r) * 2.0^(-s) /
+                im^r *
+                gamma(complex(1 - s - 2im*ϵp)) *
+                gamma(complex(r + 2ν + 2)) /
+                (gamma(complex(r + ν + 1 - s + im*ϵ)) *
+                 gamma(complex(r + ν + 1 + im*τ)) *
+                 gamma(complex(r + ν + 1 + s + im*ϵ)))
+
+    return prefactor * num_sum / den_sum
+end
+
+# ============================================================
+#  Meromorphic amplitudes
+# ============================================================
+
+"""
+    compute_amplitudes_mero(s, l, m, a, ω; nmax=40, nmax_cf=150)
+
+Meromorphic mode: amplitudes with branch-cut factors removed.
+"""
+function compute_amplitudes_mero(s::Int, l::Int, m::Int, a::Float64, ω;
+                                  nmax::Int=40, nmax_cf::Int=150)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
+
+    fn = compute_fn(p, ν; nmax=nmax)
+
+    Ap = compute_Aplus(p, ν, fn; nmax=nmax)
+    Am = compute_Aminus(p, ν, fn; nmax=nmax)
+
+    Kν = compute_Knu_mero(p, ν, fn; nmax=nmax)
+    fn_negν = compute_fn(p, -ν - 1; nmax=nmax)
+    Kνn = compute_Knu_mero(p, -ν - 1, fn_negν; nmax=nmax)
+
+    ω_c = p.ω
+    ϵ = p.ϵ
+    κ = p.κ
+    phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
+    phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
+
+    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase_mero
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj_mero
+
+    Σfn = sum(fn[n] for n in -nmax:nmax)
+    Btrans = (ϵ * κ / ω_c)^(2s) *
+             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
+
+    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+            ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
+end
+
+"""
+    compute_amplitudes_nufixed_mero(s, l, m, a, ω, ν_fixed; nmax=40)
+
+Meromorphic mode with ν fixed.
+"""
+function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a::Float64, ω,
+                                          ν_fixed; nmax::Int=40)
+    p = MSTParams(s, l, m, a, ω)
+    δ = 1e-10
+    ν = complex(ν_fixed + δ)
+
+    fn = compute_fn(p, ν; nmax=nmax)
+
+    Ap = compute_Aplus(p, ν, fn; nmax=nmax)
+    Am = compute_Aminus(p, ν, fn; nmax=nmax)
+
+    Kν = compute_Knu_mero(p, ν, fn; nmax=nmax)
+
+    ν_neg = -ν - 1
+    fn_negν = compute_fn(p, ν_neg; nmax=nmax)
+    Kνn = compute_Knu_mero(p, ν_neg, fn_negν; nmax=nmax)
+
+    ω_c = p.ω
+    ϵ = p.ϵ
+    κ = p.κ
+    phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
+    phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
+
+    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase_mero
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj_mero
+
+    Σfn = sum(fn[n] for n in -nmax:nmax)
+    Btrans = (ϵ * κ / ω_c)^(2s) *
+             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
+
+    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+            ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
+end
