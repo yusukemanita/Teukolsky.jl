@@ -4,9 +4,10 @@
 
 function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
+    T = typeof(ϵ)
 
     prefactor = exp(-π*ϵ/2) * exp(π*im*(ν+1-s)/2) *
-                2.0^(-1+s-im*ϵ) *
+                T(2)^(-1+s-im*ϵ) *
                 gamma(ν + 1 - s + im*ϵ) / gamma(ν + 1 + s - im*ϵ)
 
     Σ = sum(fn[n] for n in nmin:nmax)
@@ -16,15 +17,16 @@ end
 
 function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
+    T = typeof(ϵ)
 
-    prefactor = 2.0^(-1-s+im*ϵ) *
+    prefactor = T(2)^(-1-s+im*ϵ) *
                 exp(-π*im*(ν+1+s)/2) *
                 exp(-π*ϵ/2)
 
     Σ = sum(
         begin
             fn_n = fn[n]
-            iszero(fn_n) ? complex(0.0) :
+            iszero(fn_n) ? zero(T) :
             (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
                      pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
         end
@@ -41,25 +43,26 @@ end
 function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     ϵp = p.ϵp
+    T = typeof(ϵ)
 
-    num_sum = complex(0.0)
+    num_sum = zero(T)
     for n in r:nmax
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n * gamma(complex(n + r + 2ν + 1)) / gamma(Float64(n - r + 1)) *
-               gamma(complex(n + ν + 1 + s + im*ϵ)) /
-               gamma(complex(n + ν + 1 - s - im*ϵ)) *
-               gamma(complex(n + ν + 1 + im*τ)) /
-               gamma(complex(n + ν + 1 - im*τ)) *
+        term = (-1)^n * gamma(T(n + r) + 2ν + 1) / gamma(T(n - r + 1)) *
+               gamma(T(n) + ν + 1 + s + im*ϵ) /
+               gamma(T(n) + ν + 1 - s - im*ϵ) *
+               gamma(T(n) + ν + 1 + im*τ) /
+               gamma(T(n) + ν + 1 - im*τ) *
                fn_n
         num_sum += term
     end
 
-    den_sum = complex(0.0)
+    den_sum = zero(T)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / gamma(Float64(r - n + 1)) /
+        term = (-1)^n / gamma(T(r - n + 1)) /
                pochhammer(r + 2ν + 2, n) *
                pochhammer(ν + 1 + s - im*ϵ, n) /
                pochhammer(ν + 1 - s + im*ϵ, n) *
@@ -67,13 +70,13 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
         den_sum += term
     end
 
-    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - ν - r) * 2.0^(-s) /
+    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - ν - r) * T(2)^(-s) /
                 im^r *
-                gamma(complex(1 - s - 2im*ϵp)) *
-                gamma(complex(r + 2ν + 2)) /
-                (gamma(complex(r + ν + 1 - s + im*ϵ)) *
-                 gamma(complex(r + ν + 1 + im*τ)) *
-                 gamma(complex(r + ν + 1 + s + im*ϵ)))
+                gamma(T(1) - s - 2im*ϵp) *
+                gamma(T(r) + 2ν + 2) /
+                (gamma(T(r) + ν + 1 - s + im*ϵ) *
+                 gamma(T(r) + ν + 1 + im*τ) *
+                 gamma(T(r) + ν + 1 + s + im*ϵ))
 
     return prefactor * num_sum / den_sum
 end
@@ -88,7 +91,7 @@ end
 Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
 Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
 """
-function compute_amplitudes(s::Int, l::Int, m::Int, a::Float64, ω;
+function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
                             nmax::Int=40, nmax_cf::Int=150)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
 
@@ -132,11 +135,12 @@ end
 
 Same as `compute_amplitudes` but with ν fixed (no ν solver).
 """
-function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a::Float64, ω,
+function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
                                      ν_fixed; nmax::Int=40)
     p = MSTParams(s, l, m, a, ω)
-    δ = 1e-10
-    ν = complex(ν_fixed + δ)
+    R = typeof(p.a)
+    δ = R(1e-10)
+    ν = Complex{R}(ν_fixed + δ)
 
     fn = compute_fn(p, ν; nmax=nmax)
 
@@ -175,25 +179,26 @@ end
 function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     ϵp = p.ϵp
+    T = typeof(ϵ)
 
-    num_sum = complex(0.0)
+    num_sum = zero(T)
     for n in r:nmax
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n * gamma(complex(n + r + 2ν + 1)) / gamma(Float64(n - r + 1)) *
-               gamma(complex(n + ν + 1 + s + im*ϵ)) /
-               gamma(complex(n + ν + 1 - s - im*ϵ)) *
-               gamma(complex(n + ν + 1 + im*τ)) /
-               gamma(complex(n + ν + 1 - im*τ)) *
+        term = (-1)^n * gamma(T(n + r) + 2ν + 1) / gamma(T(n - r + 1)) *
+               gamma(T(n) + ν + 1 + s + im*ϵ) /
+               gamma(T(n) + ν + 1 - s - im*ϵ) *
+               gamma(T(n) + ν + 1 + im*τ) /
+               gamma(T(n) + ν + 1 - im*τ) *
                fn_n
         num_sum += term
     end
 
-    den_sum = complex(0.0)
+    den_sum = zero(T)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / gamma(Float64(r - n + 1)) /
+        term = (-1)^n / gamma(T(r - n + 1)) /
                pochhammer(r + 2ν + 2, n) *
                pochhammer(ν + 1 + s - im*ϵ, n) /
                pochhammer(ν + 1 - s + im*ϵ, n) *
@@ -201,13 +206,13 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
         den_sum += term
     end
 
-    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - r) * 2.0^(-s) /
+    prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - r) * T(2)^(-s) /
                 im^r *
-                gamma(complex(1 - s - 2im*ϵp)) *
-                gamma(complex(r + 2ν + 2)) /
-                (gamma(complex(r + ν + 1 - s + im*ϵ)) *
-                 gamma(complex(r + ν + 1 + im*τ)) *
-                 gamma(complex(r + ν + 1 + s + im*ϵ)))
+                gamma(T(1) - s - 2im*ϵp) *
+                gamma(T(r) + 2ν + 2) /
+                (gamma(T(r) + ν + 1 - s + im*ϵ) *
+                 gamma(T(r) + ν + 1 + im*τ) *
+                 gamma(T(r) + ν + 1 + s + im*ϵ))
 
     return prefactor * num_sum / den_sum
 end
@@ -221,7 +226,7 @@ end
 
 Meromorphic mode: amplitudes with branch-cut factors removed.
 """
-function compute_amplitudes_mero(s::Int, l::Int, m::Int, a::Float64, ω;
+function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
                                   nmax::Int=40, nmax_cf::Int=150)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
 
@@ -258,11 +263,12 @@ end
 
 Meromorphic mode with ν fixed.
 """
-function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a::Float64, ω,
+function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
                                           ν_fixed; nmax::Int=40)
     p = MSTParams(s, l, m, a, ω)
-    δ = 1e-10
-    ν = complex(ν_fixed + δ)
+    R = typeof(p.a)
+    δ = R(1e-10)
+    ν = Complex{R}(ν_fixed + δ)
 
     fn = compute_fn(p, ν; nmax=nmax)
 

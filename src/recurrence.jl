@@ -33,7 +33,7 @@ end
 Compute R_n = f_n/f_{n-1} via continued fraction going to +∞.
 """
 function Rn_cf(p::MSTParams, ν, n; nmax=150)
-    R = complex(0.0)
+    R = zero(p.ϵ)
     for k in nmax:-1:n
         α_k = αn(p, ν, k)
         β_k = βn(p, ν, k)
@@ -49,7 +49,7 @@ end
 Compute L_n = f_n/f_{n+1} via continued fraction going to -∞.
 """
 function Ln_cf(p::MSTParams, ν, n; nmax=150)
-    L = complex(0.0)
+    L = zero(p.ϵ)
     for k in -nmax:n
         α_k = αn(p, ν, k)
         β_k = βn(p, ν, k)
@@ -70,8 +70,9 @@ Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax.
 Normalized so that f_0 = 1.
 """
 function compute_fn(p::MSTParams, ν; nmax::Int=40)
-    f = Dict{Int, ComplexF64}()
-    f[0] = 1.0 + 0.0im
+    T = typeof(p.ϵ)
+    f = Dict{Int, T}()
+    f[0] = one(T)
 
     for n in 1:nmax
         R = Rn_cf(p, ν, n)
@@ -92,14 +93,15 @@ end
 Like `compute_fn` but with f_n = 0 for n < nmin.
 """
 function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=40)
-    f = Dict{Int, ComplexF64}()
+    T = typeof(p.ϵ)
+    f = Dict{Int, T}()
 
     for n in -nmax:nmin-1
-        f[n] = 0.0 + 0.0im
+        f[n] = zero(T)
     end
 
     n0 = max(0, nmin)
-    f[n0] = 1.0 + 0.0im
+    f[n0] = one(T)
 
     for n in n0+1:nmax
         R = Rn_cf(p, ν, n)
