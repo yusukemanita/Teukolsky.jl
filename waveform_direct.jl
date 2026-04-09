@@ -12,7 +12,7 @@ N     = 4000          # 周波数グリッド点数
 ω_max = 6.0           # 周波数の最大値 [M⁻¹]
 t_ini = -100.0        # 時刻の始点 [M]
 t_max =  600.0        # 時刻の終点 [M]
-Nt    = 4000          # 時刻グリッド点数
+Nt    = 7000          # 時刻グリッド点数
 
 # ── 周波数グリッド（半整数シフト: ω=0 を避ける）─────────────
 Δω     = 2ω_max / N
@@ -72,9 +72,9 @@ fig2 = plot(ω_grid, abs.(GF), yscale=:log10,
     framestyle=:box, grid=true, 
     fontfamily="Computer Modern", 
     dpi=120,
-    ylim=(1e-10, 1e0),
-    xlim=(-2.5,2.5))
+    ylim=(1e-20, 1e0),
+    xlim=(-6,6))
 
 savefig(fig, "waveform_direct.png")
 println("waveform_direct.png を保存しました")
-fig2
+plot(fig, fig2, layout=(2,1), size=(800, 1000))
