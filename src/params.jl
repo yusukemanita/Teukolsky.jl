@@ -95,13 +95,28 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     # Eigenvalues of M are SWSHEigenvalueSpectral.
     # SpinWeightedSpheroidalEigenvalue = SWSHEigenvalueSpectral - 2m*c + c²
     # (same correction as in the Mathematica SpinWeightedSpheroidalHarmonics package)
-    # The diagonal of M at c=0 is l*(l+1) - s*(s+1), so select the eigenvalue
-    # closest to that reference value.
-    A_guess = l*(l+1) - s*(s+1)
-    evals   = eigvals(M)
-    idx     = argmin(abs.(evals .- A_guess))
+    #
+    # Selection strategy: compare corrected eigenvalues (= λ) to a perturbative
+    # estimate λ_pert(c).  Using a fixed reference λ₀ = l(l+1)-s(s+1) fails at
+    # large |c| because the true λ can be far from λ₀ and a different branch
+    # gets selected.  The perturbative estimate tracks the correct branch much
+    # better for moderate |c|.
+    #
+    # Perturbative λ to O(c²):
+    #   λ ≈ λ₀ + c·λ₁ + c²·λ₂
+    #   λ₁ = -2m(1 + s²/(l(l+1)))
+    #   λ₂ = H(l+1) - H(l),   H(ℓ) = 2(ℓ²-m²)(ℓ²-s²)/((2ℓ-1)ℓ³(2ℓ+1))
+    λ₀ = l*(l+1) - s*(s+1)
+    λ₁ = l > 0 ? -2*m*(1 + s^2 / (l*(l+1))) : zero(Float64)
+    H(ℓ) = ℓ == 0 ? 0.0 : 2*(ℓ^2 - m^2)*(ℓ^2 - s^2) / ((2ℓ-1) * ℓ^3 * (2ℓ+1))
+    λ₂ = l > 0 ? H(l+1) - H(l) : zero(Float64)
+    λ_pert = ComplexF64(λ₀ + c64*λ₁ + c64^2*λ₂)
 
-    return Complex{R}(evals[idx]) - 2*m*c + c^2   # λ = SpinWeightedSpheroidalEigenvalue
+    evals  = eigvals(M)
+    λ_vals = evals .- 2*m*c64 .+ c64^2   # corrected eigenvalues = SpinWeightedSpheroidalEigenvalue
+    idx    = argmin(abs.(λ_vals .- λ_pert))
+
+    return Complex{R}(λ_vals[idx])
 end
 
 # ============================================================
