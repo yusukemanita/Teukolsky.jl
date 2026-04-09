@@ -21,5 +21,17 @@ Manifest.toml
 .ipynb_checkpoints/
 *.ipynb
 
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.dvi
+*.bbl
+*.blg
+
 # OS
 .DS_Store
