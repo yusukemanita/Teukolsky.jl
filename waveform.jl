@@ -8,9 +8,9 @@ using CSV, DataFrames
 
 # ── Parameters ──────────────────────────────────────────────
 p = WaveformParams(
-    s=-2, l=2, m=2, a=0.9,
+    s=-2, l=2, m=2, a=0.7,
     N=3000, ω_max=6.0,
-    t_ini=-100.0, t_max=600.0, Nt=3000,
+    t_ini=-100.0, t_max=600.0, Nt=3000,taper_frac=0.1
 )
 
 # ── Compute ─────────────────────────────────────────────────
@@ -30,9 +30,12 @@ end
 ω_qnm = [load_qnm(p.l, p.m, n, p.a) for n in 0:3]
 
 # ── Plot ─────────────────────────────────────────────────────
-plot(t_grid, abs.(ψ_real),
+fig = plot(t_grid, abs.(ψ_real),
     xlabel=L"t\ [M]", ylabel=L"|\psi_4(t)|",
     label=L"|\Re[\psi_4]|", lw=1.0,
     title="Ringdown waveform  (s=$(p.s), l=$(p.l), m=$(p.m), a=$(p.a))",
     framestyle=:box, grid=true, fontfamily="Computer Modern",
     dpi=120, yscale=:log10)
+savefig(fig, "waveform.png")
+println("Saved waveform.png")
+fig
