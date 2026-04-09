@@ -1,0 +1,348 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage[hidelinks,pdfusetitle]{hyperref}
+\usepackage{xcolor}
+\usepackage{physics}
+\usepackage{booktabs}
+\usepackage[margin=2.5cm]{geometry}
+
+% NOTE: Run  julia generate_figures.jl  before compiling this document.
+
+\title{Branch Cut Contribution to the Teukolsky Waveform\\
+\large MST Method --- Numerical Analysis Note}
+\author{}
+\date{\today}
+
+\newcommand{\Binc}{B^{\mathrm{inc}}}
+\newcommand{\Bref}{B^{\mathrm{ref}}}
+\newcommand{\psiBC}{\psi_{\mathrm{BC}}}
+\newcommand{\psiQNM}{\psi_{\mathrm{QNM}}}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\bigskip
+
+% ============================================================
+\section{Overview}
+% ============================================================
+
+The retarded Green's function of the Teukolsky equation can be decomposed
+in the frequency domain via the MST (Mano--Suzuki--Takasugi) method.
+Its inverse Fourier transform yields the time-domain waveform,
+which receives three types of contributions:
+\begin{equation}
+  \psi(t) = \psiQNM(t) + \psi_{\mathrm{BC}}^{-}(t>0)
+            + \psi_{\mathrm{BC}}^{+}(t<0) + \cdots
+  \label{eq:decomp}
+\end{equation}
+The first term is the discrete sum over quasi-normal mode (QNM) poles;
+the second and third are integrals along branch cuts on the negative and
+positive imaginary $\omega$-axes, respectively.
+The ellipsis denotes contributions that vanish identically in the
+physical setup considered here.
+
+The \emph{numerical reference waveform} used throughout this note is a
+high-precision real-axis Fourier integral, stored as
+\texttt{psi4\_waveform\_l2m2a0.900.csv}.
+Parameters: $s=-2$, $l=m=2$, $a/M=0.9$.
+
+% ============================================================
+\section{Green's Function and Analytic Structure}
+% ============================================================
+
+\subsection{Definition}
+
+The MST solution furnishes two linearly independent homogeneous solutions
+$R^{\mathrm{in}}$ and $R^{\mathrm{up}}$.
+The retarded Green's function in the frequency domain is
+\begin{equation}
+  G(\omega) = \frac{\Bref}{2i\omega\,\Binc},
+  \label{eq:G}
+\end{equation}
+where $\Binc(\omega)$ and $\Bref(\omega)$ are the incidence and reflection
+coefficients of the MST solution.
+
+\subsection{Analytic structure in the complex \texorpdfstring{$\omega$}{omega}-plane}
+
+$G(\omega)$ is meromorphic in $\mathbb{C}$ except for two branch cuts,
+both on the imaginary axis:
+\begin{align}
+  \text{Negative branch cut:} &\quad \omega = -i\sigma,\quad \sigma \in (0,\infty), \label{eq:cut_neg}\\
+  \text{Positive branch cut:} &\quad \omega = +i\sigma,\quad \sigma \in (0,\infty). \label{eq:cut_pos}
+\end{align}
+These branch cuts arise because the MST characteristic exponent $\nu(\omega)$
+is not single-valued on the imaginary axis.
+The QNM poles are located in the lower half-plane
+($\mathrm{Im}\,\omega_n < 0$, $\mathrm{Re}\,\omega_n > 0$ for prograde modes),
+and their mirror images at $-\omega_n^*$ (retrograde modes).
+
+% ============================================================
+\section{Branch Cut Integral: Negative Imaginary Axis (\texorpdfstring{$t>0$}{t>0})}
+% ============================================================
+
+\subsection{Derivation from the Fourier integral}
+
+The time-domain waveform is
+\begin{equation}
+  \psi(t) = \frac{1}{2\pi}\int_{-\infty}^{+\infty} G(\omega)\,e^{-i\omega t}\,d\omega.
+  \label{eq:fourier}
+\end{equation}
+For $t>0$, Jordan's lemma allows closing the contour in the \emph{lower}
+half-plane.
+Cauchy's theorem decomposes the result as
+\begin{equation}
+  \psi(t) = \underbrace{(-i)\sum_n \mathrm{Res}[G\,e^{-i\omega t};\,\omega_n]}_{\psiQNM}
+            + \underbrace{\frac{1}{2\pi}\oint_{\mathcal{H}^-}G(\omega)\,e^{-i\omega t}\,d\omega}_{\psi_{\mathrm{BC}}^-},
+  \label{eq:cauchy}
+\end{equation}
+where $\mathcal{H}^-$ is the Hankel contour wrapping the negative imaginary
+branch cut counter-clockwise.
+
+Parameterising $\omega = -i\sigma \pm \delta$ ($\delta\to 0^+$) on the two
+sides of the cut, with $d\omega = -i\,d\sigma$, the contour integral becomes
+\begin{equation}
+  \boxed{
+    \psi_{\mathrm{BC}}^-(t) = \frac{i}{2\pi}
+    \int_0^{\infty} \Delta G^-(\sigma)\,e^{-\sigma t}\,d\sigma,
+    \qquad t > 0,
+  }
+  \label{eq:BC_neg}
+\end{equation}
+where the discontinuity across the cut is
+\begin{equation}
+  \Delta G^-(\sigma)
+  = G\!\left(+\delta - i\sigma\right) - G\!\left(-\delta - i\sigma\right).
+  \label{eq:DG_neg}
+\end{equation}
+
+\subsection{Symmetry relation and numerical evaluation}
+
+The left-side value $G(-\delta - i\sigma)$ is related to
+$G(+\delta + i\sigma)$ by the complex conjugation symmetry of the
+Teukolsky equation:
+\begin{equation}
+  B_{lm}(\omega^*) = B_{l,-m}^*(\omega)
+  \quad\Longrightarrow\quad
+  G(-\delta-i\sigma) = \frac{\overline{\Bref_{l,-m}(+\delta+i\sigma)}}
+    {2i(-\delta-i\sigma)\,\overline{\Binc_{l,-m}(+\delta+i\sigma)}}.
+  \label{eq:sym_neg}
+\end{equation}
+This allows evaluating both sides from calls with $m$ and $-m$ at the
+same point $\omega_R = +\delta + i\sigma$ (positive imaginary side),
+avoiding the need to analytically continue across the cut.
+
+\subsubsection*{Precision requirement}
+
+For $\sigma \gtrsim 3$ the two terms in Eq.~\eqref{eq:DG_neg} are nearly
+equal and catastrophic cancellation reduces \texttt{Float64} accuracy to
+zero.
+256-bit \texttt{BigFloat} (77 decimal digits) is required; 128-bit is
+marginally insufficient (residual error $\sim 10^5$ at $\sigma = 3$).
+
+% ============================================================
+\section{Branch Cut Integral: Positive Imaginary Axis (\texorpdfstring{$t<0$}{t<0})}
+% ============================================================
+
+For $t<0$, Jordan's lemma closes the contour in the \emph{upper}
+half-plane, and the Hankel contour $\mathcal{H}^+$ wraps the positive
+imaginary branch cut.
+By an analogous derivation,
+\begin{equation}
+  \boxed{
+    \psi_{\mathrm{BC}}^+(t) = \frac{-i}{2\pi}
+    \int_0^{\infty} \Delta G^+(\sigma)\,e^{+\sigma t}\,d\sigma,
+    \qquad t < 0,
+  }
+  \label{eq:BC_pos}
+\end{equation}
+with
+\begin{equation}
+  \Delta G^+(\sigma)
+  = G\!\left(+\delta + i\sigma\right) - G\!\left(-\delta + i\sigma\right).
+  \label{eq:DG_pos}
+\end{equation}
+The same symmetry relation gives $G(-\delta+i\sigma)$ from
+$\overline{B_{l,-m}(+\delta+i\sigma)}$, evaluated at the \emph{same} point
+$\omega_R = \delta + i\sigma$.
+No catastrophic cancellation occurs here (\texttt{Float64} is sufficient).
+
+% ============================================================
+\section{QNM Contribution}
+% ============================================================
+
+The residue sum in Eq.~\eqref{eq:cauchy} gives
+\begin{equation}
+  \psiQNM(t) = -\sum_{n=0}^{N_{\max}} \left[
+    B_n^{(+m)}\,e^{-i\omega_n^{(+m)} t}
+    + B_n^{(-m)}\,e^{-i\omega_n^{(-m)} t}
+  \right], \qquad t > 0,
+  \label{eq:QNM}
+\end{equation}
+where $\omega_n^{(\pm m)}$ and $B_n^{(\pm m)}$ are the QNM frequencies
+and excitation factors for prograde ($+m$) and retrograde ($-m$) modes,
+loaded from the \texttt{KerrQNMEFs} tables with the convention
+$\omega = (\text{col}_2 + i\,\text{col}_3)/2$ and
+$B = (\text{col}_8 + i\,\text{col}_9)/16$.
+
+% ============================================================
+\section{Numerical Implementation}
+% ============================================================
+
+\subsection{Grid design}
+
+Both integrals are evaluated on a logarithmically spaced $\sigma$-grid:
+\begin{equation}
+  \sigma_i = \sigma_{\min}\,\exp\!\left(\frac{i-1}{N_\sigma - 1}\,
+              \ln\frac{\sigma_{\max}}{\sigma_{\min}}\right),
+  \qquad i = 1,\ldots,N_\sigma,
+\end{equation}
+with non-uniform trapezoidal weights $\Delta\sigma_i$.
+The log spacing is essential because the saddle point of the integrand
+$\Delta G(\sigma)\,e^{-\sigma t}$ occurs near $\sigma_\star \sim 1/t$,
+which varies over several orders of magnitude as $t$ ranges from
+$0.5\,M$ to $600\,M$.
+
+\subsection{Parameters used}
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Quantity & $N_\sigma$ & $\sigma_{\min}$ & $\sigma_{\max}$ & Precision \\
+\midrule
+$\psi_{\mathrm{BC}}^-$ (neg.\ axis) & 150 & $10^{-3}$ & 5 & 256-bit BigFloat \\
+$\psi_{\mathrm{BC}}^+$ (pos.\ axis) & 300 & $10^{-3}$ & 10 & Float64 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{Results}
+% ============================================================
+
+\subsection{Waveform decomposition}
+
+Figure~\ref{fig:decomp} shows the absolute value of $\mathrm{Re}[\psi_4(t)]$
+for the numerical reference (CSV) and each component.
+Key observations:
+\begin{itemize}
+  \item For $t < 0$: $\psi_{\mathrm{BC}}^+$ closely tracks the numerical
+        waveform, confirming that the pre-merger signal is dominated by the
+        positive-imaginary branch cut.
+  \item For $t > 0$ (early): $\psiQNM$ matches the ring-down oscillations.
+  \item For $t > 0$ (late, $t \gtrsim 50\,M$): $\psi_{\mathrm{BC}}^-$
+        dominates and follows the expected $t^{-(2l+3)} = t^{-7}$
+        power-law tail.
+  \item $\psiQNM + \psi_{\mathrm{BC}}^-$ reproduces the numerical waveform
+        over the full $t > 0$ interval.
+\end{itemize}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{waveform_decomposition.pdf}
+  \caption{Waveform decomposition for $s=-2$, $l=m=2$, $a/M=0.9$.
+    The lower panel shows the residual
+    $|\mathrm{Re}[\psi_{\mathrm{num}}] - \mathrm{Re}[\psiQNM + \psi_{\mathrm{BC}}^-]|$.}
+  \label{fig:decomp}
+\end{figure}
+
+% ============================================================
+\section{Convergence Analysis Near \texorpdfstring{$t=0$}{t=0}}
+% ============================================================
+
+\subsection{The convergence criterion}
+
+The branch cut integral in Eq.~\eqref{eq:BC_neg} is a Laplace transform
+of $\Delta G^-(\sigma)$.
+Truncating at $\sigma_{\max}$ introduces the tail error
+\begin{equation}
+  \varepsilon(t,\sigma_{\max})
+  = \frac{1}{2\pi}\int_{\sigma_{\max}}^{\infty}
+    |\Delta G^-(\sigma)|\,e^{-\sigma t}\,d\sigma.
+  \label{eq:tail}
+\end{equation}
+The exponential factor $e^{-\sigma_{\max} t}$ controls convergence.
+For reasonable accuracy one requires
+\begin{equation}
+  \sigma_{\max}\cdot t \gg 1.
+  \label{eq:criterion}
+\end{equation}
+With $\sigma_{\max} = 5$:
+\begin{itemize}
+  \item $t = 10\,M$: $e^{-50} \approx 10^{-22}$ — machine-zero, excellent convergence.
+  \item $t = 1\,M$: $e^{-5} \approx 0.007$ — adequate convergence.
+  \item $t = 0.5\,M$: $e^{-2.5} \approx 0.08$ — poor convergence.
+  \item $t = 0.1\,M$: $e^{-0.5} \approx 0.6$ — essentially no convergence.
+\end{itemize}
+
+\subsection{Integrand decay}
+
+Figure~\ref{fig:integrand} shows the integrand
+$|\Delta G^-(\sigma)|\,e^{-\sigma t}$ as a function of $\sigma$ for
+several values of $t$.
+At large $t$ the integrand decays to machine zero well before
+$\sigma_{\max} = 5$, whereas at $t = 0.5\,M$ it is still $\mathcal{O}(1)$
+at the upper limit, indicating that the integral is not converged.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{convergence_integrand.pdf}
+  \caption{Integrand $|\Delta G^-(\sigma)|\,e^{-\sigma t}$ vs.\ $\sigma$
+    for several $t$ values. For small $t$ the exponential factor is
+    near unity at $\sigma = \sigma_{\max} = 5$, signalling poor convergence
+    of the numerical integral.}
+  \label{fig:integrand}
+\end{figure}
+
+\subsection{Effect of \texorpdfstring{$\sigma_{\max}$}{sigma\_max}}
+
+Figure~\ref{fig:sigma_max} shows $\psi_{\mathrm{BC}}^-$ computed with
+$\sigma_{\max} = 1, 2, 5, 10, 20$ (Float64 results using the positive-axis
+cut for stability, where the same convergence issue applies).
+All curves agree at large $t$, but diverge near $t \sim 0$ as
+$\sigma_{\max}$ decreases.
+The convergence is uniform for $t \gtrsim 1/\sigma_{\max}$, consistent
+with the criterion~\eqref{eq:criterion}.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{convergence_sigma_max.pdf}
+  \caption{Branch cut integral $|\mathrm{Re}[\psi_{\mathrm{BC}}^+]|$ for
+    $t<0$ computed with different upper limits $\sigma_{\max}$.
+    Convergence deteriorates near $t=0$; good agreement requires
+    $\sigma_{\max} \gtrsim 1/|t|$.}
+  \label{fig:sigma_max}
+\end{figure}
+
+% ============================================================
+\section{Summary and Outlook}
+% ============================================================
+
+\begin{enumerate}
+  \item The MST Green's function $G(\omega) = \Bref/(2i\omega\Binc)$
+        has branch cuts on both imaginary semi-axes, in addition to QNM poles.
+  \item For $t < 0$, the positive-imaginary branch cut integral dominates,
+        and is numerically stable in \texttt{Float64}.
+  \item For $t > 0$, the QNM sum dominates at early times; the negative-imaginary
+        branch cut gives the $t^{-7}$ power-law tail at late times.
+        256-bit \texttt{BigFloat} is required for $\sigma \gtrsim 3$.
+  \item Near $t = 0$, both branch cut integrals converge slowly because the
+        damping factor $e^{-\sigma t}$ is near unity for all $\sigma$.
+        A practical rule is $\sigma_{\max} \gtrsim 10/|t_{\min}|$.
+\end{enumerate}
+
+\subsection*{Suggested additional analysis}
+
+\begin{enumerate}
+  \item \textbf{Power-law confirmation}: log-log plot of $|\psi_{\mathrm{BC}}^-|$
+        vs.\ $t$ at late times, with reference lines $t^{-7}$ and $t^{-(2l+5)}$.
+  \item \textbf{$n$-mode convergence}: show how the QNM residual decreases
+        as more overtones $N_{\max}$ are included.
+  \item \textbf{Spin dependence}: repeat for $a/M = 0, 0.5, 0.9, 0.99$
+        to observe how the branch cut strength changes with spin.
+  \item \textbf{Frequency-domain discontinuity}: plot $|\Delta G^-(\sigma)|$
+        to characterize the branch cut strength vs.\ $\sigma$.
+\end{enumerate}
+
+\end{document}
