@@ -3,163 +3,169 @@ Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
 
 using BHPtoolkit
 using Printf
+using Plots
+using LaTeXStrings
 
 # ============================================================
-#  Tests for K(ω) — three independent checks
+#  Test: Branch-cut structure of R^up in the MST implementation
 #
-#  Background: In Leaver's notation (ω-frequency, Schwarzschild, s=-2):
-#    R^up   → purely outgoing at ∞  (computed by Rup in the code)
-#    R^down → purely ingoing  at ∞  = (Rin - Bref × Rup) / Binc
-#             Note: Rup(-ν-1) is also outgoing at ∞, NOT R^down!
-#    K defined by: W[R^up, R^in](ω e^{2πi}) = W[R^up, R^in](ω) × (1 + K·Bref/Binc)
+#  The monodromy relation (Leaver 1986 eq. 31) states:
+#    R^up(ωe^{2πi}) = R^up(ω) − K(ω) R^down(ω)
 #
-#  Test A: W[Rup, Rin] is r-independent
-#    Confirms Rup and Rin solve the same ODE.
-#    Passes if δ < 1e-8 for r ∈ [4, 20].
+#  Numerically, R^up(ω) computed via MST with Julia's principal-branch
+#  log distributes the branch cut across TWO rays from ω = 0:
+#    (i)  Negative imaginary ω-axis: from U(a,b,c) with c = −2iẑ
+#    (ii) Negative real ω-axis: from prefactor ẑ^α
 #
-#  Test B: K = 0 when ν − ε̃ ∈ ℤ  (monodromy factor vanishes)
-#    Search numerically for ω where Re(ν - ε) ≈ 1 (the first zero above ω=0).
-#    Pass: |K| / max(|mono_factor|, 1e-10) << 1  near that ω.
+#  The FULL monodromy K·R^down requires going around ω = 0 (crossing
+#  both cuts). Crossing only one cut gives a partial discontinuity.
 #
-#  Test C: Low-frequency limit K(ω → 0) ≈ −2πiε e^{iℓπ}
-#    Already passed in test_monodromy_K.jl, included here for completeness.
+#  Tests below verify:
+#    1. ΔR^up / (K·R^down) is r-independent (proportionality to R^down)
+#    2. ΔR^up / (K·R^down) is δ-independent (finite discontinuity)
+#    3. Negative-real-axis cut gives a DIFFERENT (larger) contribution
 # ============================================================
 
 s, l, m = -2, 2, 2
+a_val   = 0.0
 nmax    = 40
 
-Δ_BL(r, a) = r^2 - 2r + a^2
+function compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r; nmax=40)
+    # Cross the negative imaginary ω-axis: ω_R = δ−iσ vs ω_L = −δ−iσ
+    ω_R = complex(δ - im*σ)
+    ω_L = complex(-δ - im*σ)
 
-function wronskian_up_in(p, ν, fn, r; nmax=40)
-    f1  = Rup(p, ν, fn, r; nmax=nmax)
-    f1p = dRup(p, ν, fn, r; nmax=nmax)
-    f2  = Rin(p, ν, fn, r; nmax=nmax)
-    f2p = dRin(p, ν, fn, r; nmax=nmax)
-    Δ_r = Δ_BL(r, p.a)^(p.s + 1)
-    return Δ_r * (f1*f2p - f1p*f2)
+    ν_R, p_R = compute_nu(s, l, m, a_val, ω_R)
+    fn_R = compute_fn(p_R, ν_R; nmax=nmax)
+    amp_R = compute_amplitudes(s, l, m, a_val, ω_R; nmax=nmax)
+
+    Rup_R = Rup(p_R, ν_R, fn_R, r; nmax=nmax)
+    Rin_R = Rin(p_R, ν_R, fn_R, r; nmax=nmax)
+    Rdown = (Rin_R - amp_R.Binc * Rup_R) / amp_R.Bref
+    K_val = compute_monodromy_K(s, l, m, a_val, ω_R).K
+
+    ν_L, p_L = compute_nu(s, l, m, a_val, ω_L)
+    fn_L = compute_fn(p_L, ν_L; nmax=nmax)
+    Rup_L = Rup(p_L, ν_L, fn_L, r; nmax=nmax)
+
+    ΔRup = Rup_L - Rup_R
+    return ΔRup / (K_val * Rdown)
 end
 
-# ── Test A: W[Rup, Rin] is r-independent ─────────────────────────────────────
+function compute_ratio_real_axis(s, l, m, a_val, σ_real, δ, r; nmax=40)
+    # Cross the negative real ω-axis: ω_above = −σ+iδ vs ω_below = −σ−iδ
+    ω_above = complex(-σ_real + im*δ)
+    ω_below = complex(-σ_real - im*δ)
+
+    ν_a, p_a = compute_nu(s, l, m, a_val, ω_above)
+    fn_a = compute_fn(p_a, ν_a; nmax=nmax)
+    amp_a = compute_amplitudes(s, l, m, a_val, ω_above; nmax=nmax)
+
+    Rup_a = Rup(p_a, ν_a, fn_a, r; nmax=nmax)
+    Rin_a = Rin(p_a, ν_a, fn_a, r; nmax=nmax)
+    Rdown = (Rin_a - amp_a.Binc * Rup_a) / amp_a.Bref
+    K_val = compute_monodromy_K(s, l, m, a_val, ω_above).K
+
+    ν_b, p_b = compute_nu(s, l, m, a_val, ω_below)
+    fn_b = compute_fn(p_b, ν_b; nmax=nmax)
+    Rup_b = Rup(p_b, ν_b, fn_b, r; nmax=nmax)
+
+    ΔRup = Rup_a - Rup_b
+    return ΔRup / (K_val * Rdown)
+end
+
+# ── Test 1: r-independence of ratio (negative imaginary axis) ────────
 println("="^70)
-println("Test A: W[Rup, Rin] is constant in r")
-println("  W = Δ^{s+1}(Rup·Rin' - Rup'·Rin)")
+println("Test 1: ΔR^up(r) / (K·R^down(r)) across neg. imag. axis")
+println("        Ratio should be constant in r (proportional to R^down)")
 println("="^70)
 
-# Note: Rin uses 2F1 which converges well for small |x| = |(r+-r)/(2κ)|.
-# For Schwarzschild a=0: r+ = 2, x = (2-r)/2 → convergence good for r ≲ 10.
-# Test at r ∈ [4, 8] where BOTH Rup (HU) and Rin (2F1) converge well.
-a_test = 0.0
-for ω_val in [0.1, 0.2, 0.3]
-    ω    = complex(ω_val)
-    ν, p = compute_nu(s, l, m, a_test, ω)
-    fn   = compute_fn(p, ν; nmax=nmax)
-
-    r_ref = 4.0
-    W_ref = wronskian_up_in(p, ν, fn, r_ref; nmax=nmax)
-    max_δ = 0.0
-    for r in [5.0, 6.0, 7.0, 8.0]
-        W = wronskian_up_in(p, ν, fn, r; nmax=nmax)
-        δ = abs(W - W_ref) / abs(W_ref)
-        max_δ = max(max_δ, δ)
+r_vals = [4.0, 6.0, 8.0, 10.0, 15.0]
+for σ in [0.3, 0.5, 0.8]
+    δ = 1e-5
+    ratios = [compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r) for r in r_vals]
+    @printf("σ=%.1f δ=%.0e: ", σ, δ)
+    for (i, r) in enumerate(r_vals)
+        @printf("r=%g→%.4e%+.4ei  ", r, real(ratios[i]), imag(ratios[i]))
     end
-    status = max_δ < 1e-5 ? "PASS" : "FAIL"
-    @printf("  a=0.0 ω=%.2f  ν=%.5f  max_δ=%.2e  [%s]\n", ω_val, real(ν), max_δ, status)
+    spread = maximum(abs.(ratios .- ratios[1])) / abs(ratios[1])
+    @printf("\n  max spread = %.2e  [%s]\n", spread, spread < 1e-2 ? "PASS" : "FAIL")
 end
 
-# Kerr: r+ = 1+√(1-a²) ≈ 1.436 for a=0.9, κ≈0.436
-for (a_val, ω_val) in [(0.9, 0.2), (0.9, 0.25)]
-    ω    = complex(ω_val)
-    ν, p = compute_nu(s, l, m, a_val, ω)
-    fn   = compute_fn(p, ν; nmax=nmax)
-
-    r_ref = 3.0
-    W_ref = wronskian_up_in(p, ν, fn, r_ref; nmax=nmax)
-    max_δ = 0.0
-    for r in [4.0, 5.0, 6.0, 7.0]
-        W = wronskian_up_in(p, ν, fn, r; nmax=nmax)
-        δ = abs(W - W_ref) / abs(W_ref)
-        max_δ = max(max_δ, δ)
+# ── Test 2: δ-independence (negative imaginary axis) ──────────────────
+println()
+println("="^70)
+println("Test 2: |ratio| converges as δ→0 (finite discontinuity from U branch cut)")
+println("="^70)
+r = 6.0
+for σ in [0.3, 0.5, 0.8, 1.0]
+    @printf("σ=%.1f:\n", σ)
+    for δ in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+        ratio = compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r)
+        @printf("  δ=%.0e  |ratio|=%.4e  ratio=%+.4e%+.4ei\n",
+                δ, abs(ratio), real(ratio), imag(ratio))
     end
-    status = max_δ < 1e-5 ? "PASS" : "FAIL"
-    @printf("  a=%.1f ω=%.2f  ν=%.5f%+.3fi  max_δ=%.2e  [%s]\n",
-            a_val, ω_val, real(ν), imag(ν), max_δ, status)
 end
 
-# ── Test B: K = 0 when ν − ε ∈ ℤ ────────────────────────────────────────────
+# ── Test 3: Negative real axis cut (prefactor contribution) ──────────
 println()
 println("="^70)
-println("Test B: K = 0 when ν − ε ∈ ℤ  (monodromy factor vanishes)")
-println("  For Schwarzschild, ν decreases from l=2 as ω increases.")
-println("  Search for ω* where Re(ν − ε) ≈ 1  (first zero of mono_factor)")
+println("Test 3: ΔR^up across neg. REAL axis (prefactor branch cut)")
+println("        Shows that the prefactor cut gives a DIFFERENT, larger contribution")
 println("="^70)
-
-# Scan ω and look at mono_factor = 1 - exp(2πi(ε-ν))
-println("ω scan:")
-@printf("  %-6s  %-10s  %-12s  %-10s  %-10s\n",
-        "ω", "ν", "Re(ν-ε)", "Im(ν-ε)", "|mono|")
-ω_scan = range(0.05, 0.5; step=0.05)
-local prev_re_val = nothing
-for ω_val in ω_scan
-    ω    = complex(ω_val)
-    ν, p = compute_nu(s, l, m, 0.0, ω)
-    ε    = p.ϵ
-    nu_minus_eps = ν - ε
-    mono = 1 - exp(2π * im * (ε - ν))
-    @printf("  %-6.3f  %-10.5f  %-12.5f  %-10.5f  %-10.4e\n",
-            ω_val, real(ν), real(nu_minus_eps), imag(nu_minus_eps), abs(mono))
-    prev_re_val = real(nu_minus_eps)
-end
-
-# Bisection to find ω* where Re(ν-ε) = 1  (between 0.30 and 0.35)
-println()
-println("Bisection for ω* where Re(ν-ε) = 1:")
-function bisect_nu_eps(s, l, m, ω_lo0, ω_hi0; niter=60)
-    lo, hi = ω_lo0, ω_hi0
-    for _ in 1:niter
-        mid = (lo + hi) / 2
-        ν_m, p_m = compute_nu(s, l, m, 0.0, complex(mid))
-        if real(ν_m - p_m.ϵ) - 1 > 0
-            lo = mid
-        else
-            hi = mid
-        end
+for σ_real in [0.3, 0.5, 0.8]
+    @printf("ω_real=%.1f:\n", σ_real)
+    for δ in [1e-3, 1e-4, 1e-5]
+        ratio_r = compute_ratio_real_axis(s, l, m, a_val, σ_real, δ, r)
+        ratio_i = compute_ratio_imag_axis(s, l, m, a_val, σ_real, δ, r)
+        @printf("  δ=%.0e  |ratio_real|=%.4e  |ratio_imag|=%.4e  (ratio: %.1f×)\n",
+                δ, abs(ratio_r), abs(ratio_i), abs(ratio_r)/abs(ratio_i))
     end
-    return (lo + hi) / 2
-end
-ω_star = bisect_nu_eps(s, l, m, 0.30, 0.35)
-ν_star, p_star = compute_nu(s, l, m, 0.0, complex(ω_star))
-res_K_star = compute_monodromy_K(s, l, m, 0.0, complex(ω_star))
-mono_star  = 1 - exp(2π * im * (p_star.ϵ - ν_star))
-@printf("  ω* = %.8f\n", ω_star)
-@printf("  ν* = %.8f + %.2ei\n", real(ν_star), imag(ν_star))
-@printf("  Re(ν*-ε*) = %.2e  (should ≈ 1)\n", real(ν_star - p_star.ϵ) - 1)
-@printf("  |mono_factor| = %.4e  (should ≈ 0)\n", abs(mono_star))
-@printf("  |K|           = %.4e  (should ≈ 0)\n", abs(res_K_star.K))
-status_B = abs(res_K_star.K) < 1e-3 ? "PASS" : "FAIL"
-@printf("  [%s]\n", status_B)
-
-# Show K as a function of ω near ω*
-println()
-println("  K near the zero (ω* ± 0.02):")
-for ω_val in [ω_star - 0.04, ω_star - 0.02, ω_star, ω_star + 0.02, ω_star + 0.04]
-    res = compute_monodromy_K(s, l, m, 0.0, complex(ω_val))
-    @printf("    ω=%.5f  |K|=%.4e  Re(ν-ε)-1=%+.4e\n",
-            ω_val, abs(res.K), real(res.ν - res.p.ϵ) - 1)
 end
 
-# ── Test C: Low-frequency limit ───────────────────────────────────────────────
-println()
-println("="^70)
-println("Test C: K(ω→0) / (−2πiε e^{iℓπ}) → 1  (ε = 2ω, M=1)")
-println("="^70)
+# ── Plots ────────────────────────────────────────────────────────────
+println("\nGenerating plots...")
+gr()
 
-for ω_val in [0.01, 0.001, 0.0001]
-    res = compute_monodromy_K(s, l, m, 0.0, complex(ω_val))
-    K   = res.K
-    ε   = 2ω_val
-    K_expected = -2π * im * ε * exp(im * π * l)
-    ratio = K / K_expected
-    status_C = abs(ratio - 1) < 20 * sqrt(ω_val) ? "PASS" : "FAIL"
-    @printf("  ω=%.4f  ratio=%.6f%+.6fi  [%s]\n",
-            ω_val, real(ratio), imag(ratio), status_C)
+# --- Plot 1: |ratio| vs σ for the two cuts ---
+σ_scan = collect(range(0.1, 1.2; length=30))
+δ_plot = 1e-5
+
+ratio_imag = [abs(compute_ratio_imag_axis(s, l, m, a_val, σ, δ_plot, 6.0)) for σ in σ_scan]
+ratio_real = [abs(compute_ratio_real_axis(s, l, m, a_val, σ, δ_plot, 6.0)) for σ in σ_scan]
+
+p1 = plot(σ_scan, ratio_imag, label="Neg. imag. axis (U cut)",
+          lw=2, color=:blue, yscale=:log10,
+          xlabel=L"\sigma\ (=|\mathrm{Im}\,\omega|)", ylabel=L"|\Delta R^{\mathrm{up}}| / |K R^{\mathrm{down}}|",
+          title="Partial discontinuities: two branch cuts of MST R^up",
+          framestyle=:box, dpi=150, legend=:topleft)
+plot!(p1, σ_scan, ratio_real, label="Neg. real axis (prefactor cut)",
+      lw=2, color=:red, ls=:dash)
+
+# --- Plot 2: δ-convergence for several σ ---
+δ_vals = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+p2 = plot(xlabel=L"\delta", ylabel=L"|\Delta R^{\mathrm{up}}| / |K R^{\mathrm{down}}|",
+          title="Convergence of partial discontinuity (neg. imag. axis)",
+          xscale=:log10, framestyle=:box, dpi=150, legend=:topright)
+colors = [:blue, :red, :green]
+for (i, σ) in enumerate([0.3, 0.5, 0.8])
+    ratios_δ = [abs(compute_ratio_imag_axis(s, l, m, a_val, σ, δ, 6.0)) for δ in δ_vals]
+    plot!(p2, δ_vals, ratios_δ, label=L"\sigma=%$σ", lw=2, color=colors[i], marker=:circle)
 end
+
+# --- Plot 3: r-independence ---
+r_plot = collect(range(3.5, 15.0; length=40))
+p3 = plot(xlabel=L"r\ [M]",
+          ylabel=L"\Delta R^{\mathrm{up}} / (K R^{\mathrm{down}})",
+          title="r-independence of ratio (neg. imag. axis, δ=10⁻⁵)",
+          framestyle=:box, dpi=150, legend=:topright)
+for (i, σ) in enumerate([0.3, 0.5, 0.8])
+    ratios_r = [compute_ratio_imag_axis(s, l, m, a_val, σ, 1e-5, r) for r in r_plot]
+    plot!(p3, r_plot, real.(ratios_r), label=L"\mathrm{Re},\ \sigma=%$σ", lw=2, color=colors[i])
+    plot!(p3, r_plot, imag.(ratios_r), label=L"\mathrm{Im},\ \sigma=%$σ", lw=2, ls=:dash, color=colors[i])
+end
+
+fig = plot(p1, p2, p3, layout=(3, 1), size=(900, 1300))
+savefig(fig, "monodromy_Rup_test.png")
+println("Saved: monodromy_Rup_test.png")
+fig
