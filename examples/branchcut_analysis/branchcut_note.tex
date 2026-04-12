@@ -111,36 +111,58 @@ sides of the cut, with $d\omega = -i\,d\sigma$, the contour integral becomes
   }
   \label{eq:BC_neg}
 \end{equation}
-where the discontinuity across the cut is
+where the discontinuity of the Green's function across the cut is
 \begin{equation}
   \Delta G^-(\sigma)
-  = G\!\left(+\delta - i\sigma\right) - G\!\left(-\delta - i\sigma\right).
+  = G\!\left(\omega_R\right) - G\!\left(\omega_L\right),
+  \qquad \omega_{R/L} = \pm\delta - i\sigma,\quad \delta\to 0^+.
   \label{eq:DG_neg}
 \end{equation}
 
-\subsection{Symmetry relation and numerical evaluation}
+\subsection{Discontinuity identity and branch-cut strength}
 
-The left-side value $G(-\delta - i\sigma)$ is related to
-$G(+\delta + i\sigma)$ by the complex conjugation symmetry of the
-Teukolsky equation:
+The analytic discontinuity of the radial solution across the cut is
+characterised by the Casals--Ottewill identity~\cite{Casals2016}.
+For the transmission-normalised upgoing solution
+$\hat{R}^{\mathrm{up}} \equiv R^{\mathrm{up}}/C^{\mathrm{trans}}$
+(which behaves as $\hat{R}^{\mathrm{up}} \sim r^{-2s-1}e^{+i\omega r^*}$ at infinity),
 \begin{equation}
-  B_{lm}(\omega^*) = B_{l,-m}^*(\omega)
-  \quad\Longrightarrow\quad
-  G(-\delta-i\sigma) = \frac{\overline{\Bref_{l,-m}(+\delta+i\sigma)}}
-    {2i(-\delta-i\sigma)\,\overline{\Binc_{l,-m}(+\delta+i\sigma)}}.
-  \label{eq:sym_neg}
+  \delta\hat{R}^{\mathrm{up}}
+  \equiv \hat{R}^{\mathrm{up}}(\omega_R,r) - \hat{R}^{\mathrm{up}}(\omega_L,r)
+  = -i\,q(\omega)\,R^{\mathrm{down}}(\omega,r),
+  \label{eq:deltaRup}
 \end{equation}
-This allows evaluating both sides from calls with $m$ and $-m$ at the
-same point $\omega_R = +\delta + i\sigma$ (positive imaginary side),
-avoiding the need to analytically continue across the cut.
+where $R^{\mathrm{down}}$ behaves as $r^{-2s-1}e^{-i\omega r^*}$ at infinity,
+and $q(\omega)$ is the \emph{branch-cut strength}.
+In terms of MST parameters,
+\begin{equation}
+  q(\omega) = i\,\frac{A^\nu_+}{A^\nu_-}\,\omega^{2s}\,\epsilon^{-2i\epsilon}\,
+              e^{i\epsilon(1-\kappa)}\bigl(1-e^{2\pi(\epsilon-i\nu)}\bigr),
+  \label{eq:q}
+\end{equation}
+where $A^\nu_\pm$ are the MST asymptotic amplitude coefficients,
+$\epsilon = 2M\omega$, $\kappa = \sqrt{1-a^2/M^2}$, and $\nu$ is the
+renormalised angular momentum.
+This is implemented as \texttt{compute\_q} in \texttt{src/branch\_cut.jl}.
 
-\subsubsection*{Precision requirement}
+\subsection{Explicit formula for \texorpdfstring{$\Delta G^-$}{DeltaG-} and numerical evaluation}
 
-For $\sigma \gtrsim 3$ the two terms in Eq.~\eqref{eq:DG_neg} are nearly
-equal and catastrophic cancellation reduces \texttt{Float64} accuracy to
-zero.
-256-bit \texttt{BigFloat} (77 decimal digits) is required; 128-bit is
-marginally insufficient (residual error $\sim 10^5$ at $\sigma = 3$).
+Using~\eqref{eq:deltaRup} together with the definition $G = \Bref/(2i\omega\Binc)$,
+the discontinuity~\eqref{eq:DG_neg} evaluates to~\cite{Casals2016}
+\begin{equation}
+  \boxed{
+    \Delta G^-(\sigma) = \frac{i\,q\,(\Bref)^2}
+      {2i\omega\,\Binc\!\left(\Binc + i\,q\,\Bref\right)},
+  }
+  \label{eq:DGneg_q}
+\end{equation}
+where $q$, $\Binc$, and $\Bref$ are all evaluated at $\omega_R = \delta - i\sigma$
+on a \emph{single} side of the cut.
+Because no subtraction of nearly-equal quantities occurs, this formula is
+numerically stable in standard \texttt{Float64} precision across the full
+$\sigma$ range, in contrast to the direct two-sided difference~\eqref{eq:DG_neg}
+which suffers catastrophic cancellation for $\sigma \gtrsim 3$ and requires
+256-bit \texttt{BigFloat} arithmetic.
 
 % ============================================================
 \section{Branch Cut Integral: Positive Imaginary Axis (\texorpdfstring{$t<0$}{t<0})}
@@ -319,64 +341,6 @@ with the criterion~\eqref{eq:criterion}.
     $\sigma_{\max} \gtrsim 1/|t|$.}
   \label{fig:sigma_max}
 \end{figure}
-
-\section{Branch Cut Strength}
-
-\subsection{Discontinuity identity for \texorpdfstring{$R^{\mathrm{up}}$}{Rup}}
-
-The analytic discontinuity across the negative imaginary axis can be related to
-the MST amplitudes via the Casals--Ottewill identity \cite{Casals2016}:
-\begin{align}
-  \delta \hat{R}^{\mathrm{up}}
-  \equiv \hat{R}^{\mathrm{up}}(\omega_R, r) - \hat{R}^{\mathrm{up}}(\omega_L, r)
-  = -i\,q(\omega)\,R^{\mathrm{down}}(\omega, r),
-  \label{eq:deltaRup}
-\end{align}
-where $\hat{R}^{\mathrm{up}} = R^{\mathrm{up}}/C^{\mathrm{trans}}$ is the
-transmission-normalised upgoing solution ($\hat{R}^{\mathrm{up}} \sim r^{-2s-1}e^{+i\omega r^*}$
-at infinity), $R^{\mathrm{down}}$ is the downgoing solution
-($R^{\mathrm{down}} \sim r^{-2s-1}e^{-i\omega r^*}$), and $q(\omega)$ is the
-\emph{branch-cut strength function}.
-The sign convention differs by $-1$ from \cite{Casals2016} due to normalization choice.
-
-\subsection{Branch-cut strength \texorpdfstring{$q(\omega)$}{q(omega)}}
-
-In terms of MST parameters, $q$ is given by
-\begin{align}
-  q(\omega) = i\frac{A^\nu_+}{A^\nu_-}\,\omega^{2s}\,\epsilon^{-2i\epsilon}\,
-              e^{i\epsilon(1-\kappa)}\bigl(1-e^{2\pi(\epsilon-i\nu)}\bigr),
-  \label{eq:q}
-\end{align}
-where $A^\nu_\pm$ are the MST asymptotic amplitude coefficients,
-$\epsilon = 2M\omega$, $\kappa = \sqrt{1-a^2/M^2}$, and $\nu$ is the
-renormalised angular momentum computed from the continued-fraction equation.
-This is implemented as \texttt{compute\_q} in \texttt{src/branch\_cut.jl}.
-
-\subsection{Alternative formula for \texorpdfstring{$\Delta G^-$}{DeltaG-}}
-
-Using~\eqref{eq:deltaRup}, the discontinuity $\Delta G^-$ of the Green's function
-across the negative imaginary axis can be expressed directly in terms of
-$q(\omega)$ and the asymptotic amplitudes~\cite{Casals2016}:
-\begin{align}
-  \Delta G^- = \frac{iq(\Bref)^2}{2i\omega\,\Binc\!\left(\Binc+iq\Bref\right)}.
-  \label{eq:DGneg_q}
-\end{align}
-This formula involves only $q$, $\Binc$, and $\Bref$ evaluated at
-$\omega_R = \delta - i\sigma$ on a single side of the cut,
-\emph{with no subtraction}, so it avoids the catastrophic cancellation
-that plagues the direct two-sided evaluation~\eqref{eq:DG_neg}.
-As a result, \eqref{eq:DGneg_q} is numerically stable in standard
-\texttt{Float64} precision across the full $\sigma$ range, as confirmed
-by comparison with the BigFloat reference (see Fig.~\ref{fig:decomp}).
-
-The agreement between $\psi_{\mathrm{BC}}^-$ (computed via
-Eq.~\eqref{eq:DGneg_q} in \texttt{Float64}) and the residual
-$\psi_{\mathrm{num}} - \psiQNM$ visible in Fig.~\ref{fig:decomp} demonstrates
-that the late-time power-law tail is fully captured by the branch cut integral
-even without extended precision arithmetic.
-
-
-
 
 % ============================================================
 \section{Summary and Outlook}
