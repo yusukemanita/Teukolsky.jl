@@ -22,7 +22,7 @@
 Compute the upgoing radial Teukolsky solution at Boyer-Lindquist radius r.
 Uses the MST series expansion in HypergeometricU functions.
 """
-function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -86,7 +86,12 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
         abs(term) < tol * abs(res_down) + tol && break
     end
 
-    return result + res_down
+    raw = result + res_down
+    if norm === nothing
+        return raw
+    else
+        return raw / norm
+    end
 end
 
 """
@@ -94,7 +99,7 @@ end
 
 Compute dR_up/dr at Boyer-Lindquist radius r.
 """
-function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -201,5 +206,10 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
         abs(term) < tol * abs(res_down) + tol && break
     end
 
-    return result + res_down
+    raw = result + res_down
+    if norm === nothing
+        return raw
+    else
+        return raw / norm
+    end
 end

@@ -3,169 +3,180 @@ Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
 
 using BHPtoolkit
 using Printf
-using Plots
-using LaTeXStrings
+using SpecialFunctions
 
 # ============================================================
-#  Test: Branch-cut structure of R^up in the MST implementation
+#  Test: Branch-cut discontinuity via Teukolsky conjugation symmetry
 #
-#  The monodromy relation (Leaver 1986 eq. 31) states:
-#    R^up(ωe^{2πi}) = R^up(ω) − K(ω) R^down(ω)
+#  Claim (Leaver 1986 eq. 31 + conjugation symmetry):
 #
-#  Numerically, R^up(ω) computed via MST with Julia's principal-branch
-#  log distributes the branch cut across TWO rays from ω = 0:
-#    (i)  Negative imaginary ω-axis: from U(a,b,c) with c = −2iẑ
-#    (ii) Negative real ω-axis: from prefactor ẑ^α
+#    ΔR^up ≡ conj(R^up_{l,−m}(ω_R)) − R^up_{l,m}(ω_R)  =  −K(ω_R) · R^down(ω_R)
 #
-#  The FULL monodromy K·R^down requires going around ω = 0 (crossing
-#  both cuts). Crossing only one cut gives a partial discontinuity.
+#  where ω_R = δ − iσ is just to the right of the negative imaginary axis.
 #
-#  Tests below verify:
-#    1. ΔR^up / (K·R^down) is r-independent (proportionality to R^down)
-#    2. ΔR^up / (K·R^down) is δ-independent (finite discontinuity)
-#    3. Negative-real-axis cut gives a DIFFERENT (larger) contribution
+#  The symmetry  R^up_{l,−m}(ω)* = R^up_{l,m}(−ω*)  means that
+#  conj(R^up_{l,−m}(ω_R)) = R^up_{l,m}(−ω_R*) = R^up_{l,m}(−δ − iσ) = R^up_{l,m}(ω_L)
+#  i.e. it gives the value on the LEFT side of the negative imaginary axis.
+#
+#  For Schwarzschild (a=0), m does not enter the radial equation so
+#  R^up_{l,−m} = R^up_{l,m} and the identity reduces to checking
+#  conj(R^up(ω_R)) − R^up(ω_R)  =  −K(ω_R) · R^down(ω_R).
+#
+#  Precision: BigFloat with 256 bits (≈ 77 decimal digits) throughout.
 # ============================================================
+
+setprecision(BigFloat, 256)
 
 s, l, m = -2, 2, 2
-a_val   = 0.0
-nmax    = 40
+a_val   = BigFloat(0)
+nmax    = 60
 
-function compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r; nmax=40)
-    # Cross the negative imaginary ω-axis: ω_R = δ−iσ vs ω_L = −δ−iσ
-    ω_R = complex(δ - im*σ)
-    ω_L = complex(-δ - im*σ)
+# ------------------------------------------------------------------
+#  Core function: ratio ΔR^up / (−K·R^down)
+#  Should equal 1 + 0i if the identity holds.
+# ------------------------------------------------------------------
+function compute_ratio(s, l, m, a_val, σ, δ, r; nmax=60)
+    ω_R = Complex{BigFloat}(δ - im*σ)
 
+    # ── Right-side quantities at ω_R ─────────────────────────────
     ν_R, p_R = compute_nu(s, l, m, a_val, ω_R)
-    fn_R = compute_fn(p_R, ν_R; nmax=nmax)
-    amp_R = compute_amplitudes(s, l, m, a_val, ω_R; nmax=nmax)
+    fn_R     = compute_fn(p_R, ν_R; nmax=nmax)
+    amp_R    = compute_amplitudes(s, l, m, a_val, ω_R; nmax=nmax)
 
-    Rup_R = Rup(p_R, ν_R, fn_R, r; nmax=nmax)
-    Rin_R = Rin(p_R, ν_R, fn_R, r; nmax=nmax)
-    Rdown = (Rin_R - amp_R.Binc * Rup_R) / amp_R.Bref
-    K_val = compute_monodromy_K(s, l, m, a_val, ω_R).K
+    Rup_R  = Rup(p_R, ν_R, fn_R, r; nmax=nmax)
+    Rin_R  = Rin(p_R, ν_R, fn_R, r; nmax=nmax)
+    Rdown  = (Rin_R - amp_R.Binc * Rup_R) / amp_R.Bref
+    q_val  = compute_q(s, l, m, a_val, ω_R; nmax=nmax)
 
-    ν_L, p_L = compute_nu(s, l, m, a_val, ω_L)
-    fn_L = compute_fn(p_L, ν_L; nmax=nmax)
-    Rup_L = Rup(p_L, ν_L, fn_L, r; nmax=nmax)
+    # ── Left-side value via conjugation symmetry ──────────────────
+    # R^up_{l,−m}(ω_R)* = R^up_{l,m}(ω_L)  (branch cut "left side")
+    # For a=0: R^up_{l,−m} = R^up_{l,m}, so left side = conj(R^up_{l,m}(ω_R))
+    ν_sym, p_sym = compute_nu(s, l, -m, a_val, ω_R)
+    fn_sym       = compute_fn(p_sym, ν_sym; nmax=nmax)
+    Rup_sym      = Rup(p_sym, ν_sym, fn_sym, r; nmax=nmax)
+    Rup_L        = conj(Rup_sym)          # = R^up_{l,m}(ω_L) by symmetry
 
-    ΔRup = Rup_L - Rup_R
-    return ΔRup / (K_val * Rdown)
+    ΔRup  = Rup_L - Rup_R                 # discontinuity
+    denom = im * q_val * Rdown            # should equal ΔRup
+
+    ratio    = ΔRup / denom
+    residual = ΔRup - denom               # should be ≈ 0
+
+    return (ratio=ratio, residual=residual, ΔRup=ΔRup, KRdown=denom,
+            K=K_val, Rdown=Rdown)
 end
 
-function compute_ratio_real_axis(s, l, m, a_val, σ_real, δ, r; nmax=40)
-    # Cross the negative real ω-axis: ω_above = −σ+iδ vs ω_below = −σ−iδ
-    ω_above = complex(-σ_real + im*δ)
-    ω_below = complex(-σ_real - im*δ)
-
-    ν_a, p_a = compute_nu(s, l, m, a_val, ω_above)
-    fn_a = compute_fn(p_a, ν_a; nmax=nmax)
-    amp_a = compute_amplitudes(s, l, m, a_val, ω_above; nmax=nmax)
-
-    Rup_a = Rup(p_a, ν_a, fn_a, r; nmax=nmax)
-    Rin_a = Rin(p_a, ν_a, fn_a, r; nmax=nmax)
-    Rdown = (Rin_a - amp_a.Binc * Rup_a) / amp_a.Bref
-    K_val = compute_monodromy_K(s, l, m, a_val, ω_above).K
-
-    ν_b, p_b = compute_nu(s, l, m, a_val, ω_below)
-    fn_b = compute_fn(p_b, ν_b; nmax=nmax)
-    Rup_b = Rup(p_b, ν_b, fn_b, r; nmax=nmax)
-
-    ΔRup = Rup_a - Rup_b
-    return ΔRup / (K_val * Rdown)
-end
-
-# ── Test 1: r-independence of ratio (negative imaginary axis) ────────
+# ══════════════════════════════════════════════════════════════════
+#  Test 1: ratio ΔR^up / (−K·R^down)  should be 1 for various r
+# ══════════════════════════════════════════════════════════════════
 println("="^70)
-println("Test 1: ΔR^up(r) / (K·R^down(r)) across neg. imag. axis")
-println("        Ratio should be constant in r (proportional to R^down)")
+println("Test 1: ratio ΔR^up / (−K·R^down) for various r  (should be 1+0i)")
+println("        BigFloat 256-bit, a=0, s=−2, l=2, m=2")
 println("="^70)
 
-r_vals = [4.0, 6.0, 8.0, 10.0, 15.0]
-for σ in [0.3, 0.5, 0.8]
-    δ = 1e-5
-    ratios = [compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r) for r in r_vals]
-    @printf("σ=%.1f δ=%.0e: ", σ, δ)
-    for (i, r) in enumerate(r_vals)
-        @printf("r=%g→%.4e%+.4ei  ", r, real(ratios[i]), imag(ratios[i]))
+r_vals = [4, 6, 8, 10, 15]
+for σ_f64 in [0.3, 0.5, 0.8]
+    σ = parse(BigFloat, string(σ_f64))
+    δ = parse(BigFloat, "1e-5")
+    @printf("σ=%.1f:\n", σ_f64)
+    for r_i in r_vals
+        r = BigFloat(r_i)
+        res = compute_ratio(s, l, m, a_val, σ, δ, r; nmax=nmax)
+        rat = res.ratio
+        @printf("  r=%2d  ratio = %+.6e %+.6ei  |ratio−1| = %.2e\n",
+                r_i, Float64(real(rat)), Float64(imag(rat)),
+                Float64(abs(rat - 1)))
     end
-    spread = maximum(abs.(ratios .- ratios[1])) / abs(ratios[1])
-    @printf("\n  max spread = %.2e  [%s]\n", spread, spread < 1e-2 ? "PASS" : "FAIL")
 end
 
-# ── Test 2: δ-independence (negative imaginary axis) ──────────────────
+# ══════════════════════════════════════════════════════════════════
+#  Test 2: δ → 0 convergence of ratio  (should stay ≈ 1, not → 0)
+# ══════════════════════════════════════════════════════════════════
 println()
 println("="^70)
-println("Test 2: |ratio| converges as δ→0 (finite discontinuity from U branch cut)")
+println("Test 2: ratio vs δ  (should converge to 1 as δ→0)")
 println("="^70)
-r = 6.0
-for σ in [0.3, 0.5, 0.8, 1.0]
-    @printf("σ=%.1f:\n", σ)
-    for δ in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
-        ratio = compute_ratio_imag_axis(s, l, m, a_val, σ, δ, r)
-        @printf("  δ=%.0e  |ratio|=%.4e  ratio=%+.4e%+.4ei\n",
-                δ, abs(ratio), real(ratio), imag(ratio))
+
+r_test = BigFloat(6)
+for σ_f64 in [0.3, 0.5, 0.8]
+    σ = parse(BigFloat, string(σ_f64))
+    @printf("σ=%.1f:\n", σ_f64)
+    for δ_exp in [-2, -3, -4, -5, -6, -7, -8]
+        δ = parse(BigFloat, "1e$(δ_exp)")
+        res = compute_ratio(s, l, m, a_val, σ, δ, r_test; nmax=nmax)
+        rat = res.ratio
+        @printf("  δ=1e%+d  ratio = %+.6e %+.6ei  |ratio−1| = %.2e\n",
+                δ_exp, Float64(real(rat)), Float64(imag(rat)),
+                Float64(abs(rat - 1)))
     end
 end
 
-# ── Test 3: Negative real axis cut (prefactor contribution) ──────────
+# ══════════════════════════════════════════════════════════════════
+#  Test 3: Print raw ΔR^up and −K·R^down to compare directly
+# ══════════════════════════════════════════════════════════════════
 println()
 println("="^70)
-println("Test 3: ΔR^up across neg. REAL axis (prefactor branch cut)")
-println("        Shows that the prefactor cut gives a DIFFERENT, larger contribution")
+println("Test 3: raw values of ΔR^up and −K·R^down  (should match)")
+println("  NOTE: For Schwarzschild (a=0), Rup_{l,-m}=Rup_{l,m} (m absent in radial eq.)")
+println("        so ΔRup = conj(Rup)-Rup = -2i Im(Rup) is purely imaginary,")
+println("        while -K·Rdown is complex → identity cannot hold for a=0.")
 println("="^70)
-for σ_real in [0.3, 0.5, 0.8]
-    @printf("ω_real=%.1f:\n", σ_real)
-    for δ in [1e-3, 1e-4, 1e-5]
-        ratio_r = compute_ratio_real_axis(s, l, m, a_val, σ_real, δ, r)
-        ratio_i = compute_ratio_imag_axis(s, l, m, a_val, σ_real, δ, r)
-        @printf("  δ=%.0e  |ratio_real|=%.4e  |ratio_imag|=%.4e  (ratio: %.1f×)\n",
-                δ, abs(ratio_r), abs(ratio_i), abs(ratio_r)/abs(ratio_i))
-    end
+
+r_test = BigFloat(6)
+δ = parse(BigFloat, "1e-6")
+for σ_f64 in [0.3, 0.5, 0.8]
+    σ = parse(BigFloat, string(σ_f64))
+    res = compute_ratio(s, l, m, a_val, σ, δ, r_test; nmax=nmax)
+    @printf("σ=%.1f:\n", σ_f64)
+    @printf("  ΔR^up       = %+.8e %+.8ei\n",
+            Float64(real(res.ΔRup)), Float64(imag(res.ΔRup)))
+    @printf("  −K·R^down   = %+.8e %+.8ei\n",
+            Float64(real(res.KRdown)), Float64(imag(res.KRdown)))
+    @printf("  residual    = %+.4e %+.4ei\n",
+            Float64(real(res.residual)), Float64(imag(res.residual)))
+    @printf("  |K|         = %.6e\n", Float64(abs(res.K)))
+    @printf("  |R^down|    = %.6e\n", Float64(abs(res.Rdown)))
 end
 
-# ── Plots ────────────────────────────────────────────────────────────
-println("\nGenerating plots...")
-gr()
+# ══════════════════════════════════════════════════════════════════
+#  Test 4: Kerr (a=0.9) — m enters the radial equation
+#
+#  For Kerr: Rup_{l,-m}(ω) ≠ Rup_{l,m}(ω).
+#  The symmetry gives: conj(Rup_{l,-m}(ω_R)) = Rup_{l,m}(ω_L)
+#  i.e. the left-side value.  The identity should then read:
+#    Rup_{l,m}(ω_L) − Rup_{l,m}(ω_R) = −K_{l,m}(ω_R) · R^down_{l,m}(ω_R)
+# ══════════════════════════════════════════════════════════════════
+println()
+println("="^70)
+println("Test 4: Kerr a=0.9 — ratio should approach 1")
+println("        For Kerr, m enters the radial eq. via angular eigenvalue,")
+println("        so Rup_{l,-m}(ω_R)* = Rup_{l,m}(ω_L) ← true L/R discontinuity")
+println("="^70)
 
-# --- Plot 1: |ratio| vs σ for the two cuts ---
-σ_scan = collect(range(0.1, 1.2; length=30))
-δ_plot = 1e-5
+a_kerr = parse(BigFloat, "0.9")
 
-ratio_imag = [abs(compute_ratio_imag_axis(s, l, m, a_val, σ, δ_plot, 6.0)) for σ in σ_scan]
-ratio_real = [abs(compute_ratio_real_axis(s, l, m, a_val, σ, δ_plot, 6.0)) for σ in σ_scan]
-
-p1 = plot(σ_scan, ratio_imag, label="Neg. imag. axis (U cut)",
-          lw=2, color=:blue, yscale=:log10,
-          xlabel=L"\sigma\ (=|\mathrm{Im}\,\omega|)", ylabel=L"|\Delta R^{\mathrm{up}}| / |K R^{\mathrm{down}}|",
-          title="Partial discontinuities: two branch cuts of MST R^up",
-          framestyle=:box, dpi=150, legend=:topleft)
-plot!(p1, σ_scan, ratio_real, label="Neg. real axis (prefactor cut)",
-      lw=2, color=:red, ls=:dash)
-
-# --- Plot 2: δ-convergence for several σ ---
-δ_vals = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
-p2 = plot(xlabel=L"\delta", ylabel=L"|\Delta R^{\mathrm{up}}| / |K R^{\mathrm{down}}|",
-          title="Convergence of partial discontinuity (neg. imag. axis)",
-          xscale=:log10, framestyle=:box, dpi=150, legend=:topright)
-colors = [:blue, :red, :green]
-for (i, σ) in enumerate([0.3, 0.5, 0.8])
-    ratios_δ = [abs(compute_ratio_imag_axis(s, l, m, a_val, σ, δ, 6.0)) for δ in δ_vals]
-    plot!(p2, δ_vals, ratios_δ, label=L"\sigma=%$σ", lw=2, color=colors[i], marker=:circle)
+r_test = BigFloat(6)
+δ = parse(BigFloat, "1e-6")
+for σ_f64 in [0.3, 0.5, 0.8]
+    σ = parse(BigFloat, string(σ_f64))
+    res = compute_ratio(s, l, m, a_kerr, σ, δ, r_test; nmax=nmax)
+    rat = res.ratio
+    @printf("σ=%.1f  ratio = %+.6e %+.6ei  |ratio−1| = %.3e\n",
+            σ_f64, Float64(real(rat)), Float64(imag(rat)),
+            Float64(abs(rat - 1)))
+    @printf("        ΔR^up=%+.3e%+.3ei   -K·Rdown=%+.3e%+.3ei\n",
+            Float64(real(res.ΔRup)), Float64(imag(res.ΔRup)),
+            Float64(real(res.KRdown)), Float64(imag(res.KRdown)))
 end
 
-# --- Plot 3: r-independence ---
-r_plot = collect(range(3.5, 15.0; length=40))
-p3 = plot(xlabel=L"r\ [M]",
-          ylabel=L"\Delta R^{\mathrm{up}} / (K R^{\mathrm{down}})",
-          title="r-independence of ratio (neg. imag. axis, δ=10⁻⁵)",
-          framestyle=:box, dpi=150, legend=:topright)
-for (i, σ) in enumerate([0.3, 0.5, 0.8])
-    ratios_r = [compute_ratio_imag_axis(s, l, m, a_val, σ, 1e-5, r) for r in r_plot]
-    plot!(p3, r_plot, real.(ratios_r), label=L"\mathrm{Re},\ \sigma=%$σ", lw=2, color=colors[i])
-    plot!(p3, r_plot, imag.(ratios_r), label=L"\mathrm{Im},\ \sigma=%$σ", lw=2, ls=:dash, color=colors[i])
+println()
+println("δ convergence for Kerr a=0.9, σ=0.5:")
+σ = parse(BigFloat, "0.5")
+for δ_exp in [-3, -4, -5, -6, -7, -8]
+    δ_bf = parse(BigFloat, "1e$(δ_exp)")
+    res = compute_ratio(s, l, m, a_kerr, σ, δ_bf, r_test; nmax=nmax)
+    rat = res.ratio
+    @printf("  δ=1e%+d  ratio = %+.6e %+.6ei  |ratio−1| = %.3e\n",
+            δ_exp, Float64(real(rat)), Float64(imag(rat)),
+            Float64(abs(rat - 1)))
 end
-
-fig = plot(p1, p2, p3, layout=(3, 1), size=(900, 1300))
-savefig(fig, "monodromy_Rup_test.png")
-println("Saved: monodromy_Rup_test.png")
-fig

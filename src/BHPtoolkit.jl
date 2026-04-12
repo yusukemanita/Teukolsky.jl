@@ -16,8 +16,8 @@ using LinearAlgebra, SpecialFunctions, Printf
 export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed
 export compute_amplitudes_mero, compute_amplitudes_nufixed_mero
-export compute_monodromy_K
-export Rin, dRin, Rup, dRup
+export compute_q
+export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
 export pochhammer
 
@@ -26,10 +26,11 @@ include("utils.jl")
 include("recurrence.jl")
 include("nu_solver.jl")
 include("amplitudes.jl")
-include("monodromy.jl")
+include("branch_cut.jl")
 include("hypergeometric.jl")
 include("radial_in.jl")
 include("radial_up.jl")
+include("radial_down.jl")
 include("waveform.jl")
 
 using .Waveform

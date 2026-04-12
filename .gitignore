@@ -10,6 +10,10 @@
 *.hdf5
 *.dat
 *.csv
+!examples/Rup_reference.csv
+
+# Claude Code
+.claude/
 
 # Julia artifacts
 *.ji
