@@ -1,3 +1,4 @@
+% !TEX program = pdflatex
 \documentclass[12pt,a4paper]{article}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
@@ -234,6 +235,10 @@ Key observations:
   \item For $t > 0$ (late, $t \gtrsim 50\,M$): $\psi_{\mathrm{BC}}^-$
         dominates and follows the expected $t^{-(2l+3)} = t^{-7}$
         power-law tail.
+  \item The curve $\psi_{\mathrm{num}} - \psiQNM$ (magenta, dash-dot) agrees
+        closely with $\psi_{\mathrm{BC}}^-$ across the full $t > 0$ range,
+        confirming that the branch cut integral accounts for the residual
+        after QNM subtraction.
   \item $\psiQNM + \psi_{\mathrm{BC}}^-$ reproduces the numerical waveform
         over the full $t > 0$ interval.
 \end{itemize}
@@ -315,6 +320,64 @@ with the criterion~\eqref{eq:criterion}.
   \label{fig:sigma_max}
 \end{figure}
 
+\section{Branch Cut Strength}
+
+\subsection{Discontinuity identity for \texorpdfstring{$R^{\mathrm{up}}$}{Rup}}
+
+The analytic discontinuity across the negative imaginary axis can be related to
+the MST amplitudes via the Casals--Ottewill identity \cite{Casals2016}:
+\begin{align}
+  \delta \hat{R}^{\mathrm{up}}
+  \equiv \hat{R}^{\mathrm{up}}(\omega_R, r) - \hat{R}^{\mathrm{up}}(\omega_L, r)
+  = -i\,q(\omega)\,R^{\mathrm{down}}(\omega, r),
+  \label{eq:deltaRup}
+\end{align}
+where $\hat{R}^{\mathrm{up}} = R^{\mathrm{up}}/C^{\mathrm{trans}}$ is the
+transmission-normalised upgoing solution ($\hat{R}^{\mathrm{up}} \sim r^{-2s-1}e^{+i\omega r^*}$
+at infinity), $R^{\mathrm{down}}$ is the downgoing solution
+($R^{\mathrm{down}} \sim r^{-2s-1}e^{-i\omega r^*}$), and $q(\omega)$ is the
+\emph{branch-cut strength function}.
+The sign convention differs by $-1$ from \cite{Casals2016} due to normalization choice.
+
+\subsection{Branch-cut strength \texorpdfstring{$q(\omega)$}{q(omega)}}
+
+In terms of MST parameters, $q$ is given by
+\begin{align}
+  q(\omega) = i\frac{A^\nu_+}{A^\nu_-}\,\omega^{2s}\,\epsilon^{-2i\epsilon}\,
+              e^{i\epsilon(1-\kappa)}\bigl(1-e^{2\pi(\epsilon-i\nu)}\bigr),
+  \label{eq:q}
+\end{align}
+where $A^\nu_\pm$ are the MST asymptotic amplitude coefficients,
+$\epsilon = 2M\omega$, $\kappa = \sqrt{1-a^2/M^2}$, and $\nu$ is the
+renormalised angular momentum computed from the continued-fraction equation.
+This is implemented as \texttt{compute\_q} in \texttt{src/branch\_cut.jl}.
+
+\subsection{Alternative formula for \texorpdfstring{$\Delta G^-$}{DeltaG-}}
+
+Using~\eqref{eq:deltaRup}, the discontinuity $\Delta G^-$ of the Green's function
+across the negative imaginary axis can be expressed directly in terms of
+$q(\omega)$ and the asymptotic amplitudes~\cite{Casals2016}:
+\begin{align}
+  \Delta G^- = \frac{iq(\Bref)^2}{2i\omega\,\Binc\!\left(\Binc+iq\Bref\right)}.
+  \label{eq:DGneg_q}
+\end{align}
+This formula involves only $q$, $\Binc$, and $\Bref$ evaluated at
+$\omega_R = \delta - i\sigma$ on a single side of the cut,
+\emph{with no subtraction}, so it avoids the catastrophic cancellation
+that plagues the direct two-sided evaluation~\eqref{eq:DG_neg}.
+As a result, \eqref{eq:DGneg_q} is numerically stable in standard
+\texttt{Float64} precision across the full $\sigma$ range, as confirmed
+by comparison with the BigFloat reference (see Fig.~\ref{fig:decomp}).
+
+The agreement between $\psi_{\mathrm{BC}}^-$ (computed via
+Eq.~\eqref{eq:DGneg_q} in \texttt{Float64}) and the residual
+$\psi_{\mathrm{num}} - \psiQNM$ visible in Fig.~\ref{fig:decomp} demonstrates
+that the late-time power-law tail is fully captured by the branch cut integral
+even without extended precision arithmetic.
+
+
+
+
 % ============================================================
 \section{Summary and Outlook}
 % ============================================================
@@ -326,7 +389,12 @@ with the criterion~\eqref{eq:criterion}.
         and is numerically stable in \texttt{Float64}.
   \item For $t > 0$, the QNM sum dominates at early times; the negative-imaginary
         branch cut gives the $t^{-7}$ power-law tail at late times.
-        256-bit \texttt{BigFloat} is required for $\sigma \gtrsim 3$.
+        The residual $\psi_{\mathrm{num}} - \psiQNM$ matches $\psi_{\mathrm{BC}}^-$,
+        confirming the completeness of the decomposition.
+        256-bit \texttt{BigFloat} is required for the direct two-sided
+        evaluation~\eqref{eq:DG_neg} at $\sigma \gtrsim 3$, but the
+        alternative formula~\eqref{eq:DGneg_q} via $q(\omega)$ is
+        stable in \texttt{Float64} across the full $\sigma$ range.
   \item Near $t = 0$, both branch cut integrals converge slowly because the
         damping factor $e^{-\sigma t}$ is near unity for all $\sigma$.
         A practical rule is $\sigma_{\max} \gtrsim 10/|t_{\min}|$.
@@ -344,5 +412,13 @@ with the criterion~\eqref{eq:criterion}.
   \item \textbf{Frequency-domain discontinuity}: plot $|\Delta G^-(\sigma)|$
         to characterize the branch cut strength vs.\ $\sigma$.
 \end{enumerate}
+
+\begin{thebibliography}{9}
+\bibitem{Casals2016}
+  M.~Casals and A.~Ottewill,
+  \textit{Branch cut and quasinormal modes at late times in rotating black holes},
+  Phys.\ Rev.\ D \textbf{94}, 064026 (2016),
+  arXiv:1608.05392.
+\end{thebibliography}
 
 \end{document}

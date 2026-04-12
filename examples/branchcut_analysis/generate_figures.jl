@@ -151,6 +151,10 @@ t_ref    = t_all[idx_pos]
 residual = [abs(real(ψ_ref[argmin(abs.(t_ref .- t))]) - real(ψ_sum[k]))
             for (k, t) in enumerate(t_pos)]
 
+# numerical − QNM: should match ψ_BC⁻ and reveal the late-time tail
+ψ_num_minus_QNM = [ψ_ref[argmin(abs.(t_ref .- t))] - ψ_QNM[k]
+                   for (k, t) in enumerate(t_pos)]
+
 p1 = plot(
     xlabel = L"t/M",
     ylabel = L"|\mathrm{Re}[\psi_4]|",
@@ -165,6 +169,9 @@ plot!(p1, t_pos, abs.(real.(ψ_BC_neg)),
 plot!(p1, t_pos, abs.(real.(ψ_QNM)),
     label = L"\psi_{QNM}\ (n\leq 7,\ \pm m)",
     lw = 1.5, color = :darkgreen, ls = :dash)
+plot!(p1, t_pos, abs.(real.(ψ_num_minus_QNM)),
+    label = L"\psi_{num}-\psi_{QNM}",
+    lw = 1.5, color = :magenta, ls = :dashdot)
 plot!(p1, t_pos, abs.(real.(ψ_sum)),
     label = L"\psi_{QNM}+\psi_{BC}^{-}",
     lw = 1.5, color = :purple, ls = :dot)
