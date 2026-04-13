@@ -19,12 +19,12 @@ a       = 0.0
 r_src   = 10.0
 δ       = 1e-3        # 実軸からの浮かし量 Im(ω) = δ
 
-N       = 600         # ω点数
-ω_min   = 0.05
+N       = 1200         # ω点数
+ω_min   = -1.0
 ω_max   = 1.0
 
 ω_real  = range(ω_min, ω_max; length=N)
-ω_grid  = ω_real
+ω_grid  = ω_real .+ im*δ   # ω = ω_real + iδ のグリッド
 
 # ── 計算 ──────────────────────────────────────────────────────
 function compute_Rin_sweep(s, l, m, a, ω_grid, r_src; nmax=60)
