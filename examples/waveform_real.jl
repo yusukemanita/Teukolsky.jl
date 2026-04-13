@@ -74,6 +74,32 @@ function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
             end
         end
 
+        # Step 3: ブランチ連続性の保護
+        if ν_prev !== nothing
+            # (A) Re(ν) が 0.5 以上ジャンプ → 複素方向を複数試行
+            if abs(real(ν) - real(ν_prev)) > 0.5
+                for δ_im in [1e-4, -1e-4, 5e-4, -5e-4, 1e-3, -1e-3]
+                    ν_seed  = real(ν_prev) + im * (imag(ν_prev) + δ_im)
+                    amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_seed)
+                    ν_try   = amp_try.ν
+                    if abs(ν_try - ν_prev) < abs(ν - ν_prev)
+                        amp = amp_try; ν = ν_try
+                        n_jumps += 1
+                        break
+                    end
+                end
+            end
+            # (B) |Im(ν)| 爆発 → 偽根を拒否して ν_prev で再試行
+            if abs(imag(ν)) > max(10 * abs(imag(ν_prev)) + 2.0, 5.0)
+                amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev)
+                ν_try   = amp_try.ν
+                if abs(imag(ν_try)) < abs(imag(ν))
+                    amp = amp_try; ν = ν_try
+                    n_jumps += 1
+                end
+            end
+        end
+
         # Rin(r_src; ω) を評価
         p       = MSTParams(s, l, m, a, ω)
         Rin_val = Rin(p, ν, amp.fn, r_src)
@@ -152,25 +178,50 @@ vline!(fig1b, [rstar_src], label = latexstring("u = r_*({r_src}M)"),
     color = :red, lw = 1, ls = :dash)
 
 # Fig 2: 周波数域 Green関数
-fig2 = plot(ω_grid, abs.(GF),
+# ylim: taper goes to ~1e-108 above ω≈5.4; clip at 1e-15 to show physical content
+GF_abs  = abs.(GF)
+ylim_lo = max(1e-15, minimum(filter(isfinite, GF_abs[GF_abs .> 0])))
+fig2 = plot(ω_grid, GF_abs,
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"|G(\omega)|",
     label      = latexstring("R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
     yscale     = :log10,
     xlim       = (-ω_max, ω_max),
+    ylim       = (1e-14, Inf),
     title      = "Frequency-domain integrand",
     framestyle = :box, grid = true,
     fontfamily = "Computer Modern", dpi = 150,
     size = (750, 400))
 
+ω_taper_start = ω_max * (1 - taper_frac)
+vline!(fig2, [ ω_taper_start, -ω_taper_start],
+    label = latexstring("\\omega_{\\rm taper} = \\pm$(ω_taper_start)"),
+    color = :gray, lw = 1, ls = :dot)
+
+# Fig 2b: 信頼できる周波数域のズーム（ω_taper_startより内側）
+# |ω| < ω_taper_start の範囲では taper = 1、数値的にも信頼できる
+ω_rel    = ω_max * (1 - taper_frac) * 0.95   # slightly inside taper start
+mask_rel = abs.(ω_grid) .≤ ω_rel
+fig2b = plot(ω_grid[mask_rel], GF_abs[mask_rel],
+    xlabel     = L"\omega\ [M^{-1}]",
+    ylabel     = L"|G(\omega)|",
+    label      = latexstring("R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
+    yscale     = :log10,
+    xlim       = (-ω_rel, ω_rel),
+    title      = "Frequency-domain integrand (pre-taper region)",
+    framestyle = :box, grid = true,
+    fontfamily = "Computer Modern", dpi = 150,
+    size = (750, 400))
+
 outdir = @__DIR__
-savefig(fig1a, joinpath(outdir, "waveform_real_time.png"))
-savefig(fig1b, joinpath(outdir, "waveform_real_zoom.png"))
-savefig(fig2,  joinpath(outdir, "waveform_real_freq.png"))
-println("waveform_real_time.png, waveform_real_zoom.png, waveform_real_freq.png を保存しました")
+savefig(fig1a,  joinpath(outdir, "waveform_real_time.png"))
+savefig(fig1b,  joinpath(outdir, "waveform_real_zoom.png"))
+savefig(fig2,   joinpath(outdir, "waveform_real_freq.png"))
+savefig(fig2b,  joinpath(outdir, "waveform_real_freq_zoom.png"))
+println("waveform_real_time.png, waveform_real_zoom.png, waveform_real_freq.png, waveform_real_freq_zoom.png を保存しました")
 
 # 複合プロット
-fig_all = plot(fig1a, fig1b, fig2, layout=(3,1), size=(800, 1100))
+fig_all = plot(fig1a, fig1b, fig2, fig2b, layout=(4,1), size=(800, 1400))
 savefig(fig_all, joinpath(outdir, "waveform_real.png"))
 println("waveform_real.png を保存しました")
 fig_all
