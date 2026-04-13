@@ -108,6 +108,7 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
     ω_c = p.ω
     ϵ = p.ϵ
     κ = p.κ
+    τ = p.τ
     phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
     phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
 
@@ -118,7 +119,7 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
-             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+             exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
 
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
 
@@ -156,6 +157,7 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
     ω_c = p.ω
     ϵ = p.ϵ
     κ = p.κ
+    τ = p.τ
     phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
     phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
 
@@ -165,7 +167,7 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
-             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+             exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
 
     return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
@@ -242,6 +244,7 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
     ω_c = p.ω
     ϵ = p.ϵ
     κ = p.κ
+    τ = p.τ
     phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
     phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
 
@@ -251,7 +254,7 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
-             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+             exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
 
     return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
@@ -284,6 +287,7 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
     ω_c = p.ω
     ϵ = p.ϵ
     κ = p.κ
+    τ = p.τ
     phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
     phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
 
@@ -293,7 +297,7 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
-             exp(im * κ * ϵ * (1 + 2 * log(κ) / (1 + κ))) * Σfn
+             exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
 
     return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
