@@ -11,13 +11,13 @@ using BHPtoolkit, Plots, LaTeXStrings, Printf
 # ============================================================
 
 # ── Parameters ───────────────────────────────────────────────
-T = BigFloat                # precision: Float64 or BigFloat
+T = Float64                # precision: Float64 or BigFloat
 
 s, l, m   = -2, 2, 2
 a         = T(0.9)
 r_src     = T(10.0)
 
-N         = 100           # number of frequency points
+N         = 1000           # number of frequency points
 ω_max     = T(3.0)         # frequency cutoff [M⁻¹]
 
 t_ini     = T(-100.0)      # start time [M]
@@ -29,7 +29,7 @@ Nt        = 7000           # number of time points
 ω_grid = T[(n - N÷2 + 0.5) * Δω for n in 0:N-1]
 
 # ── Compute G(ω) for positive ω, mirror to negative ─────────
-function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=100) where T
+function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=200) where T
     N  = length(ω_grid)
     GF = Vector{Complex{T}}(undef, N)
 
@@ -38,8 +38,17 @@ function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=100) where T
         ω   = ω_grid[i]
         amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=nmax)
         ν   = amp.ν
+        if !isfinite(real(ν)) || !isfinite(imag(ν))
+            GF[i] = i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
+            continue
+        end
         p   = MSTParams(s, l, m, a, ω)
-        GF[i] = Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Bref / (2im * ω * amp.Binc)
+        val = try
+            Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Bref / (2im * ω * amp.Binc)
+        catch
+            i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
+        end
+        GF[i]  = isfinite(real(val)) ? val : (i > N÷2 + 1 ? GF[i-1] : zero(Complex{T}))
         ν_prev = ν
         i % 200 == 0 && (print("."); flush(stdout))
     end
