@@ -1,4 +1,22 @@
 # ============================================================
+#  BigFloat-safe gamma
+#
+#  SpecialFunctions.gamma(x::BigFloat) throws DomainError for x < 0.
+#  When ω is on the negative imaginary axis, many gamma arguments become
+#  negative reals (zero imaginary part), triggering this bug.
+#  Fix: reflection formula Γ(x) = π / (sin(πx) Γ(1-x)) for x < 0.
+# ============================================================
+
+function _cgamma(z::Complex{T}) where T<:AbstractFloat
+    if iszero(imag(z)) && real(z) < 0
+        x = real(z)
+        return Complex{T}(T(π) / (sin(T(π) * x) * gamma(T(1) - x)))
+    end
+    return gamma(z)
+end
+_cgamma(z) = gamma(z)
+
+# ============================================================
 #  Pochhammer symbol (a)_n = Γ(a+n)/Γ(a)
 # ============================================================
 

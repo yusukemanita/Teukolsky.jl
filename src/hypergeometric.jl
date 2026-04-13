@@ -24,8 +24,8 @@ function hypergeometric_U(a, b, z)
         b = b + 1e-8im
     end
 
-    term1 = gamma(complex(1 - b)) / gamma(complex(a + 1 - b)) * _₁F₁(a, b, z)
-    term2 = gamma(complex(b - 1)) / gamma(complex(a)) * z^(1 - b) * _₁F₁(a + 1 - b, 2 - b, z)
+    term1 = _cgamma(complex(1 - b)) / _cgamma(complex(a + 1 - b)) * _₁F₁(a, b, z)
+    term2 = _cgamma(complex(b - 1)) / _cgamma(complex(a)) * z^(1 - b) * _₁F₁(a + 1 - b, 2 - b, z)
     return term1 + term2
 end
 

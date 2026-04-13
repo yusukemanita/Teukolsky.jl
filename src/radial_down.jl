@@ -42,7 +42,7 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
 
     # Prefactor for R^ν_+
     prefac = 2^ν * exp(-π*ϵ) * exp(im*π*(ν + 1 - s)) *
-             gamma(complex(ν + 1 - s + im*ϵ)) / gamma(complex(ν + 1 + s - im*ϵ)) *
+             _cgamma(complex(ν + 1 - s + im*ϵ)) / _cgamma(complex(ν + 1 + s - im*ϵ)) *
              exp(-im*zhat) * zhat^(ν + im*ϵp) *
              (zhat - ϵ*κ)^(-s - im*ϵp)
 
