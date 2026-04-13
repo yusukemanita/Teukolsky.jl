@@ -98,7 +98,7 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
     # εp = (ε+τ)/2 = 0 at the superradiance boundary ω = mΩH.
     # There the transmission amplitude Btrans → 0 and Binc, Bref are not well-defined.
     # Matches Wolfram Teukolsky package: returns Indeterminate for Inc/Ref at εp=0.
-    if iszero(p.ϵp)
+    if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes: εp = (ε+τ)/2 = 0 (ω = mΩH, superradiance boundary). " *
               "Binc, Bref, Kν are not well-defined. Returning NaN for amplitude fields."
         nan = complex(NaN, NaN)
@@ -155,7 +155,7 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
     δ = R(1e-10)
     ν = Complex{R}(ν_fixed + δ)
 
-    if iszero(p.ϵp)
+    if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes_nufixed: εp = 0 (ω = mΩH). Returning NaN for amplitude fields."
         nan = complex(NaN, NaN)
         fn_d = compute_fn(p, ν; nmax=nmax)
@@ -252,7 +252,7 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
                                   nmax::Int=80, nmax_cf::Int=150)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
 
-    if iszero(p.ϵp)
+    if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes_mero: εp = 0 (ω = mΩH). Returning NaN for amplitude fields."
         nan = complex(NaN, NaN)
         fn_d = compute_fn(p, ν; nmax=nmax)
@@ -301,7 +301,7 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
     δ = R(1e-10)
     ν = Complex{R}(ν_fixed + δ)
 
-    if iszero(p.ϵp)
+    if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes_nufixed_mero: εp = 0 (ω = mΩH). Returning NaN for amplitude fields."
         nan = complex(NaN, NaN)
         fn_d = compute_fn(p, ν; nmax=nmax)
