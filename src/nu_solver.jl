@@ -162,8 +162,10 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         return ν_fin, abs(real(g0(ν_fin))) < sqrt(tol_use)
     end
 
-    # Compute monodromy first to classify the branch
-    c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ)
+    # Compute monodromy first to classify the branch.
+    # nmax scales with |ε| = 2|ω| so the series stays converged at high ω.
+    nmax_mono = max(60, round(Int, 30 * abs(2 * real(complex(ω)))))
+    c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ; nmax=nmax_mono)
     rc   = real(c2pn)
 
     if imag(complex(ω)) != 0
