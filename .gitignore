@@ -12,6 +12,7 @@
 *.csv
 !examples/Rup_reference.csv
 !examples/Rin_reference.csv
+!examples/Rin_sweep_reference.csv
 
 # Claude Code
 .claude/

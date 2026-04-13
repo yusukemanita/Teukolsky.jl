@@ -17,7 +17,7 @@
 # ============================================================
 
 """
-    compute_q(s, l, m, a, ω; nmax=40, nmax_cf=150)
+    compute_q(s, l, m, a, ω; nmax=80, nmax_cf=150)
 
 Compute the branch-cut coefficient q(ω) for the MST Teukolsky solution.
 
@@ -38,7 +38,7 @@ Named tuple `(q, ν, p, Ap, Am)`:
 - `Am`: A_-^ν normalization sum
 """
 function compute_q(s::Int, l::Int, m::Int, a, ω;
-                   nmax::Int=40, nmax_cf::Int=150, ν_init=nothing)
+                   nmax::Int=80, nmax_cf::Int=150, ν_init=nothing)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init)
     fn   = compute_fn(p, ν; nmax=nmax)
 

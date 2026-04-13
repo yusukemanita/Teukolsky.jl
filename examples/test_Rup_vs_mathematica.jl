@@ -42,8 +42,8 @@ for i in 1:size(ref, 1)
 
     # Compute with our code
     ν, p = compute_nu(s, l, m, a, ω)
-    fn = compute_fn(p, ν; nmax=60)
-    Rup_julia = Rup(p, ν, fn, r; nmax=60)
+    fn = compute_fn(p, ν; nmax=80)
+    Rup_julia = Rup(p, ν, fn, r; nmax=80)
 
     rel_err = abs(Rup_julia - Rup_math) / abs(Rup_math)
     status = rel_err < tol ? "PASS" : "FAIL"

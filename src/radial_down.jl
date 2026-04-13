@@ -21,7 +21,7 @@
 # ============================================================
 
 """
-    Rdown(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14)
+    Rdown(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
 
 Compute the downgoing radial Teukolsky solution at Boyer-Lindquist radius r.
 Rdown = R^ν_+ / norm, normalized so that at infinity:
@@ -30,7 +30,7 @@ Rdown = R^ν_+ / norm, normalized so that at infinity:
 
 norm = A^ν_+ · ω^{-1} · exp(-i(ε ln ε - (1-κ)/2 · ε))
 """
-function Rdown(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14)
+function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)

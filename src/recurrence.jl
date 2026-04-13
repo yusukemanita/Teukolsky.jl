@@ -64,12 +64,12 @@ end
 # ============================================================
 
 """
-    compute_fn(p, ν; nmax=60)
+    compute_fn(p, ν; nmax=80)
 
 Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax.
 Normalized so that f_0 = 1.
 """
-function compute_fn(p::MSTParams, ν; nmax::Int=60)
+function compute_fn(p::MSTParams, ν; nmax::Int=80)
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
     f[0] = one(T)
@@ -88,11 +88,11 @@ function compute_fn(p::MSTParams, ν; nmax::Int=60)
 end
 
 """
-    compute_fn_truncated(p, ν, nmin; nmax=60)
+    compute_fn_truncated(p, ν, nmin; nmax=80)
 
 Like `compute_fn` but with f_n = 0 for n < nmin.
 """
-function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=60)
+function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80)
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
 

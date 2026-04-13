@@ -23,7 +23,7 @@
 # ============================================================
 
 """
-    Rup(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14, ctrans=nothing)
+    Rup(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14, ctrans=nothing)
 
 Compute the upgoing radial Teukolsky solution at Boyer-Lindquist radius r.
 Normalized by Ctrans = ω^{-1-2s} A^ν_- exp(i(ε log ε - (1-κ)/2 ε)) so that:
@@ -35,7 +35,7 @@ Matches Mathematica's MSTRadialUp convention (norm = UpTrans).
 If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
 used directly and `A^ν_-` is not recomputed.
 """
-function Rup(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14,
+function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
              ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
@@ -118,7 +118,7 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14,
 end
 
 """
-    dRup(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14, ctrans=nothing)
+    dRup(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14, ctrans=nothing)
 
 Compute dR_up/dr at Boyer-Lindquist radius r.
 Normalized by the same Ctrans as `Rup`.
@@ -126,7 +126,7 @@ Normalized by the same Ctrans as `Rup`.
 If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
 used directly and `A^ν_-` is not recomputed.
 """
-function dRup(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14,
+function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
               ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
