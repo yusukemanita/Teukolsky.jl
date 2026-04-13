@@ -33,40 +33,14 @@ function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=200) where T
     N  = length(ω_grid)
     GF = Vector{Complex{T}}(undef, N)
 
-    ν_prev  = nothing
-    rc_prev = nothing
+    ν_prev = nothing
     for i in (N÷2 + 1):N
         ω   = ω_grid[i]
         amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=nmax)
         ν   = amp.ν
-
-        # ── rc tracking: detect spurious branch-boundary crossings ──────
-        p_tmp = MSTParams(s, l, m, a, ω)
-        rc = real(BHPtoolkit.monodromy_cos2pi_nu(s, l, m, a, ω, p_tmp.λ))
-
-        if rc_prev !== nothing && ν_prev !== nothing
-            # Crossed ±1 boundary AND both sides are within 0.3 of it → noise
-            cross_neg1 = sign(rc + 1) != sign(rc_prev + 1) &&
-                         (abs(rc + 1) < 0.3 || abs(rc_prev + 1) < 0.3)
-            cross_pos1 = sign(rc - 1) != sign(rc_prev - 1) &&
-                         (abs(rc - 1) < 0.3 || abs(rc_prev - 1) < 0.3)
-            if cross_neg1 || cross_pos1
-                # Bypass branch classification: use complex-ω Newton with ν_prev as seed
-                ω_c = Complex{T}(ω, T(1e-10))
-                ν_tracked, _ = compute_nu(s, l, m, a, ω_c; ν_init=ν_prev)
-                amp2 = compute_amplitudes_nufixed(s, l, m, a, ω, ν_tracked; nmax=nmax)
-                if isfinite(real(amp2.Binc)) && abs(amp2.ν - ν_prev) < abs(ν - ν_prev)
-                    amp = amp2
-                    ν   = amp2.ν
-                    rc  = rc_prev   # keep rc from previous step (avoid updating boundary)
-                end
-            end
-        end
-        # ────────────────────────────────────────────────────────────────
-
         if !isfinite(real(ν)) || !isfinite(imag(ν))
             GF[i] = i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
-            rc_prev = rc; continue
+            continue
         end
         p   = MSTParams(s, l, m, a, ω)
         val = try
@@ -74,9 +48,8 @@ function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=200) where T
         catch
             i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
         end
-        GF[i]   = isfinite(real(val)) ? val : (i > N÷2 + 1 ? GF[i-1] : zero(Complex{T}))
-        ν_prev  = ν
-        rc_prev = rc
+        GF[i]  = isfinite(real(val)) ? val : (i > N÷2 + 1 ? GF[i-1] : zero(Complex{T}))
+        ν_prev = ν
         i % 200 == 0 && (print("."); flush(stdout))
     end
     println(" done")
