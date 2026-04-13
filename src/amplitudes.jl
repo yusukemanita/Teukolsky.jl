@@ -2,7 +2,7 @@
 #  Asymptotic amplitudes A^ν_±, Eqs. (157)-(158)
 # ============================================================
 
-function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
+function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=60, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
@@ -15,7 +15,7 @@ function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
     return prefactor * Σ
 end
 
-function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
+function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=60, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
@@ -40,7 +40,7 @@ end
 #  Matching coefficient K_ν, Eq. (165)
 # ============================================================
 
-function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
+function compute_Knu(p::MSTParams, ν, fn; nmax::Int=60, r::Int=0)
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     ϵp = p.ϵp
     T = typeof(ϵ)
@@ -86,13 +86,13 @@ end
 # ============================================================
 
 """
-    compute_amplitudes(s, l, m, a, ω; nmax=40, nmax_cf=150)
+    compute_amplitudes(s, l, m, a, ω; nmax=60, nmax_cf=150)
 
 Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
 Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
 """
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
-                            nmax::Int=40, nmax_cf::Int=150, ν_init=nothing)
+                            nmax::Int=60, nmax_cf::Int=150, ν_init=nothing)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init)
 
     fn = compute_fn(p, ν; nmax=nmax)
@@ -132,12 +132,12 @@ end
 # ============================================================
 
 """
-    compute_amplitudes_nufixed(s, l, m, a, ω, ν_fixed; nmax=40)
+    compute_amplitudes_nufixed(s, l, m, a, ω, ν_fixed; nmax=60)
 
 Same as `compute_amplitudes` but with ν fixed (no ν solver).
 """
 function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
-                                     ν_fixed; nmax::Int=40)
+                                     ν_fixed; nmax::Int=60)
     p = MSTParams(s, l, m, a, ω)
     R = typeof(p.a)
     δ = R(1e-10)
@@ -178,7 +178,7 @@ end
 #  Meromorphic K_ν
 # ============================================================
 
-function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
+function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=60, r::Int=0)
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     ϵp = p.ϵp
     T = typeof(ϵ)
@@ -224,12 +224,12 @@ end
 # ============================================================
 
 """
-    compute_amplitudes_mero(s, l, m, a, ω; nmax=40, nmax_cf=150)
+    compute_amplitudes_mero(s, l, m, a, ω; nmax=60, nmax_cf=150)
 
 Meromorphic mode: amplitudes with branch-cut factors removed.
 """
 function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
-                                  nmax::Int=40, nmax_cf::Int=150)
+                                  nmax::Int=60, nmax_cf::Int=150)
     ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
 
     fn = compute_fn(p, ν; nmax=nmax)
@@ -262,12 +262,12 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
 end
 
 """
-    compute_amplitudes_nufixed_mero(s, l, m, a, ω, ν_fixed; nmax=40)
+    compute_amplitudes_nufixed_mero(s, l, m, a, ω, ν_fixed; nmax=60)
 
 Meromorphic mode with ν fixed.
 """
 function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
-                                          ν_fixed; nmax::Int=40)
+                                          ν_fixed; nmax::Int=60)
     p = MSTParams(s, l, m, a, ω)
     R = typeof(p.a)
     δ = R(1e-10)

@@ -12,7 +12,7 @@
 # ============================================================
 
 """
-    Rin(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+    Rin(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14)
 
 Compute the (un-normalized) ingoing radial Teukolsky solution at r.
 
@@ -24,7 +24,7 @@ Summation matches Teukolsky package (MST.m lines 531-535):
 For the transmission-normalized version (matching Mathematica's
 `TeukolskyRadial["In",...]`), call `Rin_phys` instead.
 """
-function Rin(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+function Rin(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14)
     κ = p.κ
     rp = p.rp
     x = complex((rp - r) / (2κ))
@@ -100,7 +100,7 @@ function Rin(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
 end
 
 """
-    Rin_phys(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+    Rin_phys(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14)
 
 Transmission-normalized ingoing Teukolsky solution, matching Mathematica's
 `TeukolskyRadial["In",...]` convention:
@@ -117,7 +117,7 @@ Physical note: the waveform formula G = Rin_raw × Bref / (2iω Binc)
 is already correct as written (Btrans cancels), but when comparing directly
 with Mathematica's MSTRadialIn output, use Rin_phys.
 """
-function Rin_phys(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+function Rin_phys(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14)
     raw = Rin(p, ν, fn, r; nmax=nmax, tol=tol)
     # InTrans = Btrans (MST.m Teukolsky case, line 106)
     s, ε, τ, κ = p.s, p.ϵ, p.τ, p.κ
@@ -128,12 +128,12 @@ function Rin_phys(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
 end
 
 """
-    dRin(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+    dRin(p::MSTParams, ν, fn, r; nmax=60, tol=1e-14)
 
 Compute dR_in/dr at Boyer-Lindquist radius r.
 Applies the same Teukolsky-compatible summation and cancellation fixes as Rin.
 """
-function dRin(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+function dRin(p::MSTParams, ν, fn, r; nmax::Int=60, tol::Float64=1e-14)
     κ = p.κ
     rp = p.rp
     x = complex((rp - r) / (2κ))

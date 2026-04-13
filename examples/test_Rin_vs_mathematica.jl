@@ -23,7 +23,7 @@ using DelimitedFiles
 Compute InTrans using the Wolfram Teukolsky package convention (MST.m line 106):
   InTrans = 4^s κ^{2s} exp(i(ε+τ)κ(1/2 + logκ/(1+κ))) * Σfn
 """
-function compute_InTrans(p::MSTParams, fn; nmax::Int=40)
+function compute_InTrans(p::MSTParams, fn; nmax::Int=60)
     s, ε, τ, κ = p.s, p.ϵ, p.τ, p.κ
     Σfn = sum(get(fn, n, 0.0+0.0im) for n in -nmax:nmax)
     prefac = complex(4.0)^s * κ^(2s) * exp(im * (ε + τ) * κ * (0.5 + log(κ) / (1 + κ)))
@@ -57,13 +57,13 @@ for i in 1:size(raw, 1)
 
     # Compute with our code
     ν, p = compute_nu(s, l, m, a, ω)
-    fn = compute_fn(p, ν; nmax=40)
+    fn = compute_fn(p, ν; nmax=60)
 
     # Raw Rin (unnormalized)
-    Rin_raw = Rin(p, ν, fn, r; nmax=40)
+    Rin_raw = Rin(p, ν, fn, r; nmax=60)
 
     # Normalize by InTrans (Wolfram convention)
-    InTrans = compute_InTrans(p, fn; nmax=40)
+    InTrans = compute_InTrans(p, fn; nmax=60)
     Rin_julia = Rin_raw / InTrans
 
     rel_err = abs(Rin_julia - Rin_math) / abs(Rin_math)
@@ -110,12 +110,12 @@ for i in 1:size(raw, 1)
     a = raw[i, 4]
     ω = complex(raw[i, 5], raw[i, 6])
 
-    amps = compute_amplitudes(s, l, m, a, ω; nmax=40)
+    amps = compute_amplitudes(s, l, m, a, ω; nmax=60)
     fn = amps.fn
     p = MSTParams(s, l, m, a, ω)
     ν = amps.ν
 
-    InTrans = compute_InTrans(p, fn; nmax=40)
+    InTrans = compute_InTrans(p, fn; nmax=60)
     Btrans_julia = amps.Btrans
 
     rel = abs(Btrans_julia - InTrans) / abs(InTrans)
