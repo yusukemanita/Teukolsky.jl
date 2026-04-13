@@ -1,122 +1,227 @@
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, Printf
+using Pkg
+Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+
+using BHPtoolkit
+using Plots, LaTeXStrings, Printf
 
 # ============================================================
-#  Waveform via real-axis frequency integral
+#  実軸積分による波形計算
 #
-#    ψ(u) = ∫ dω/2π  G(ω) e^{-iωu}
-#    G(ω) = Rin(r_src; ω) × Bref / (2iω Binc)
+#    ψ(u) = ∫ dω/2π  [Rin(r'=r_src) Bref / (2iω Binc)] e^{-iωu}
 #
-#  u = retarded time, r_src = source location [M]
+#  u = retarded time  (= t at null infinity)
+#  r_src = 10M  (source location)
 # ============================================================
-
-# ── Parameters ───────────────────────────────────────────────
-const T = Float64          # precision: Float64 or BigFloat
 
 s, l, m   = -2, 2, 2
-a         = T(0.0)
-r_src     = T(10.0)
+a         = 0.0
+r_src     = 10.0        # source position r' [M]
 
-N         = 4000           # number of frequency points
-ω_max     = T(2.0)         # frequency cutoff [M⁻¹]
+N         = 4000        # 周波数点数（正負合わせて）
+ω_max     = 2.0         # 周波数打ち切り [M⁻¹]
+taper_frac = 0.0        # Planck taperの割合
 
-t_ini     = T(-100.0)      # start time [M]
-t_max     = T(600.0)       # end time [M]
-Nt        = 7000           # number of time points
+t_ini     = -100.0      # 時刻始点 [M]
+t_max     =  600.0      # 時刻終点 [M]
+Nt        =  7000       # 時刻点数
 
-# ── Frequency grid (half-integer shift to avoid ω=0) ─────────
+# ── 周波数グリッド（半整数シフト: ω=0 を回避）───────────────
 Δω     = 2ω_max / N
-ω_grid = T[(n - N÷2 + 0.5) * Δω for n in 0:N-1]
+ω_grid = [(n - N÷2 + 0.5) * Δω for n in 0:N-1]
 
-# ── Compute G(ω) for positive ω, mirror to negative ─────────
-function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=100) where T
-    N  = length(ω_grid)
-    GF = Vector{Complex{T}}(undef, N)
+# ── Planck taper ─────────────────────────────────────────────
+@inline function planck_taper(x::Real)
+    x ≤ 0.0 && return 1.0
+    x ≥ 1.0 && return 0.0
+    return 1.0 / (exp(1/x - 1/(1-x)) + 1)
+end
+@inline function taper_weight(ω::Real, ω_max::Real, frac::Real)
+    frac ≤ 0.0 && return 1.0
+    x = (abs(ω) / ω_max - (1 - frac)) / frac
+    return planck_taper(x)
+end
 
-    ν_prev = nothing
+# ── G(ω) = Rin(r_src; ω) * Bref / (2iω Binc) を計算 ─────────
+# ブランチトラッキング: 正の周波数を小→大の順に計算し
+#   1. ν_init=ν_prev で前のブランチを引き継ぐ
+#   2. Im(ν)の符号反転を検出したら共役を使って符号を維持
+# 負の周波数は G(-ω) = conj(G(ω)) でミラー
+
+function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
+    GF = Vector{ComplexF64}(undef, N)
+    local ν_prev = nothing
+    local n_jumps = 0
     for i in (N÷2 + 1):N
-        ω   = ω_grid[i]
-        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=nmax)
+        ω = ω_grid[i]
+        w = taper_weight(ω, ω_max, taper_frac)
+        if iszero(w)
+            GF[i] = zero(ComplexF64)
+            continue
+        end
+
+        # Step 1: ν_init = ν_prev でブランチを引き継ぐ
+        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=100)
         ν   = amp.ν
-        p   = MSTParams(s, l, m, a, ω)
-        GF[i] = Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Bref / (2im * ω * amp.Binc)
+
+        # Step 2: Im(ν)の符号反転を検出したら共役ブランチを試みる
+        if ν_prev !== nothing && imag(ν_prev) * imag(ν) < -1e-10
+            ν_try   = conj(ν)
+            amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_try, nmax=100)
+            if imag(amp_try.ν) * imag(ν_prev) ≥ 0
+                amp = amp_try
+                ν   = amp.ν
+                n_jumps += 1
+            end
+        end
+
+        # Step 3: ブランチ連続性の保護
+        if ν_prev !== nothing
+            # (A) Re(ν) が 0.5 以上ジャンプ → 複素方向を複数試行
+            if abs(real(ν) - real(ν_prev)) > 0.5
+                for δ_im in [1e-4, -1e-4, 5e-4, -5e-4, 1e-3, -1e-3]
+                    ν_seed  = real(ν_prev) + im * (imag(ν_prev) + δ_im)
+                    amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_seed, nmax=100)
+                    ν_try   = amp_try.ν
+                    if abs(ν_try - ν_prev) < abs(ν - ν_prev)
+                        amp = amp_try; ν = ν_try
+                        n_jumps += 1
+                        break
+                    end
+                end
+            end
+            # (B) |Im(ν)| 爆発 → 偽根を拒否して ν_prev で再試行
+            if abs(imag(ν)) > max(10 * abs(imag(ν_prev)) + 2.0, 5.0)
+                amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=100)
+                ν_try   = amp_try.ν
+                if abs(imag(ν_try)) < abs(imag(ν))
+                    amp = amp_try; ν = ν_try
+                    n_jumps += 1
+                end
+            end
+        end
+
+        # Rin(r_src; ω) を評価
+        p       = MSTParams(s, l, m, a, ω)
+        Rin_val = Rin(p, ν, amp.fn, r_src; nmax=100)
+
+        GF[i]  = Rin_val * amp.Bref / (2im * ω * amp.Binc) * w
         ν_prev = ν
+
         i % 200 == 0 && (print("."); flush(stdout))
     end
-    println(" done")
+    println("\n完了 (符号反転修正: $n_jumps 回)")
 
-    # G(-ω) = conj(G(ω))  (ψ is real-valued)
+    # 負周波数: G(-ω) = conj(G(ω)) （ψが実数値になる条件）
     for i in 1:(N÷2)
         GF[i] = conj(GF[N + 1 - i])
     end
     return GF
 end
 
-println("Computing G(ω)  ($N points, r_src = $r_src M) ...")
-GF = compute_GF(s, l, m, a, ω_grid, r_src)
+println("G(ω) を計算中 ($N 点, r_src = $r_src M, branch-tracked) ...")
+GF = compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
 
-# ── Time-domain waveform: ψ(u) = Δω/2π Σ G(ω_n) e^{-iω_n u} ─
+# ── 時刻積分: ψ(u) = Δω/2π * Σ G(ω_n) e^{-iω_n u} ──────────
 t_grid = range(t_ini, t_max; length=Nt)
 ψ      = Vector{ComplexF64}(undef, Nt)
 prefac = Δω / (2π)
 
-println("Computing ψ(u)  ($Nt points) ...")
+println("時刻積分中 ($Nt 点) ...")
 for (k, t) in enumerate(t_grid)
     s_val = zero(ComplexF64)
     @inbounds for n in 1:N
         s_val += GF[n] * exp(-im * ω_grid[n] * t)
     end
     ψ[k] = prefac * s_val
-    k % 1000 == 0 && (print("."); flush(stdout))
+    k % 100 == 0 && (print("."); flush(stdout))
 end
-println(" done")
+println("\n完了")
 
-# ── Tortoise coordinate r*(r_src) ────────────────────────────
-rp_bh    = 1 + sqrt(1 - a^2)
-rm_bh    = 1 - sqrt(1 - a^2)
-rstar_src = r_src + (rp_bh/(rp_bh - rm_bh)) * log(abs(r_src - rp_bh)) -
-                    (rm_bh/(rp_bh - rm_bh)) * log(abs(r_src - rm_bh))
-@printf "r*(%.1f M) = %.3f M\n" r_src rstar_src
+# ── tortoise座標 r*(r_src) を計算（ピーク時刻の推定）──────────
+rp_bh = 1 + sqrt(1 - a^2)
+rm_bh = 1 - sqrt(1 - a^2)
+rstar_src = r_src + (rp_bh/(rp_bh - rm_bh))*log(abs(r_src - rp_bh)) -
+                    (rm_bh/(rp_bh - rm_bh))*log(abs(r_src - rm_bh))
+@printf "r*(r_src=%.1f) = %.3f M\n" r_src rstar_src
 
-# ── Plot 1: time-domain waveform ─────────────────────────────
-t_arr = collect(Float64.(t_grid))
+# ── プロット ──────────────────────────────────────────────────
+gr()
+t_arr = collect(t_grid)
 
-fig_time = plot(
-    t_arr, abs.(real.(ψ));
+# Fig 1a: 全時刻域（log scale）
+fig1a = plot(t_arr, abs.(real.(ψ)),
     xlabel     = L"u\ [M]",
     ylabel     = L"|\mathrm{Re}[\psi(u)]|",
-    label      = latexstring("s=$(s),\\ l=$(l),\\ m=$(m),\\ a=$(a)"),
+    label      = latexstring("r'=$(r_src)M"),
     yscale     = :log10,
-    title      = "Time-domain waveform",
+    title      = "Waveform  (s=$s, l=$l, m=$m, a=$a)",
     framestyle = :box, grid = true,
     fontfamily = "Computer Modern", dpi = 150,
-    size       = (800, 400))
-vline!(fig_time, [Float64(rstar_src)];
-    label  = latexstring("u = r_*($(r_src)M) = $(round(rstar_src; digits=1))"),
-    color  = :red, lw = 1.2, ls = :dash)
+    size = (750, 400))
+vline!(fig1a, [rstar_src], label = latexstring("u = r_*({r_src}M)"),
+    color = :red, lw = 1, ls = :dash)
 
-# ── Plot 2: frequency-domain spectrum ────────────────────────
-ω_arr  = Float64.(ω_grid)
-GF_abs = abs.(GF)
+# Fig 1b: u ≈ r*(r_src) 付近のズーム（QNM立ち上がり確認）
+u_zoom_lo = rstar_src - 20.0
+u_zoom_hi = rstar_src + 200.0
+mask_zoom  = u_zoom_lo .≤ t_arr .≤ u_zoom_hi
+fig1b = plot(t_arr[mask_zoom], abs.(real.(ψ[mask_zoom])),
+    xlabel     = L"u\ [M]",
+    ylabel     = L"|\mathrm{Re}[\psi(u)]|",
+    label      = latexstring("r'=$(r_src)M"),
+    yscale     = :log10,
+    title      = "Zoom: u near r_*(r_src)",
+    framestyle = :box, grid = true,
+    fontfamily = "Computer Modern", dpi = 150,
+    size = (750, 400))
+vline!(fig1b, [rstar_src], label = latexstring("u = r_*({r_src}M)"),
+    color = :red, lw = 1, ls = :dash)
 
-fig_freq = plot(
-    ω_arr, GF_abs;
+# Fig 2: 周波数域 Green関数
+# ylim: taper goes to ~1e-108 above ω≈5.4; clip at 1e-15 to show physical content
+GF_abs  = abs.(GF)
+ylim_lo = max(1e-15, minimum(filter(isfinite, GF_abs[GF_abs .> 0])))
+fig2 = plot(ω_grid, GF_abs,
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"|G(\omega)|",
-    label      = latexstring("G(\\omega) = R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
+    label      = latexstring("R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
     yscale     = :log10,
-    xlim       = (-Float64(ω_max), Float64(ω_max)),
+    xlim       = (-ω_max, ω_max),
     ylim       = (1e-14, Inf),
-    title      = "Frequency-domain spectrum",
+    title      = "Frequency-domain integrand",
     framestyle = :box, grid = true,
     fontfamily = "Computer Modern", dpi = 150,
-    size       = (800, 400))
+    size = (750, 400))
 
-# ── Save ─────────────────────────────────────────────────────
+ω_taper_start = ω_max * (1 - taper_frac)
+vline!(fig2, [ ω_taper_start, -ω_taper_start],
+    label = latexstring("\\omega_{\\rm taper} = \\pm$(ω_taper_start)"),
+    color = :gray, lw = 1, ls = :dot)
+
+# Fig 2b: 信頼できる周波数域のズーム（ω_taper_startより内側）
+# |ω| < ω_taper_start の範囲では taper = 1、数値的にも信頼できる
+ω_rel    = ω_max * (1 - taper_frac) * 0.95   # slightly inside taper start
+mask_rel = abs.(ω_grid) .≤ ω_rel
+fig2b = plot(ω_grid[mask_rel], GF_abs[mask_rel],
+    xlabel     = L"\omega\ [M^{-1}]",
+    ylabel     = L"|G(\omega)|",
+    label      = latexstring("R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
+    yscale     = :log10,
+    xlim       = (-ω_rel, ω_rel),
+    title      = "Frequency-domain integrand (pre-taper region)",
+    framestyle = :box, grid = true,
+    fontfamily = "Computer Modern", dpi = 150,
+    size = (750, 400))
+
 outdir = @__DIR__
-savefig(fig_time, joinpath(outdir, "waveform_time.png"))
-savefig(fig_freq, joinpath(outdir, "waveform_freq.png"))
-println("Saved: waveform_time.png, waveform_freq.png")
+savefig(fig1a,  joinpath(outdir, "waveform_real_time.png"))
+savefig(fig1b,  joinpath(outdir, "waveform_real_zoom.png"))
+savefig(fig2,   joinpath(outdir, "waveform_real_freq.png"))
+savefig(fig2b,  joinpath(outdir, "waveform_real_freq_zoom.png"))
+println("waveform_real_time.png, waveform_real_zoom.png, waveform_real_freq.png, waveform_real_freq_zoom.png を保存しました")
 
-display(fig_time)
-display(fig_freq)
+# 複合プロット
+fig_all = plot(fig1a, fig1b, fig2, fig2b, layout=(4,1), size=(800, 1400))
+savefig(fig_all, joinpath(outdir, "waveform_real.png"))
+println("waveform_real.png を保存しました")
+fig_all
