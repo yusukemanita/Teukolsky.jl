@@ -4,7 +4,7 @@
 #  Sasaki-Tagoshi Eqs. (153), (159); MST.m lines 616-652
 #  Teukolsky case only.
 #
-#  R_up(r) = prefac(ẑ) * Σ_n fUp_n * HU[n]
+#  R_up(r) = prefac(ẑ) / Ctrans * Σ_n fUp_n * HU[n]
 #
 #  where ẑ = ε(r - r-)/2,  c = -2iẑ
 #  HU[n] = c^n U(n+aU, 2n+bU, c)
@@ -14,15 +14,29 @@
 #
 #  prefac = 2^ν e^{-πε} e^{-iπ(ν+1)} e^{iẑ} ẑ^{ν+i(ε+τ)/2}
 #           (ẑ-εκ)^{-i(ε+τ)/2-s} e^{-iπs}
+#
+#  Ctrans = ω^{-1-2s} A^ν_- exp(i(ε log ε - (1-κ)/2 ε))
+#
+#  Normalized so that at infinity:
+#    Rup ~ r^{-1-2s} e^{+iωr*}
+#  matching Mathematica's MSTRadialUp (MST.m: prefac/UpTrans).
 # ============================================================
 
 """
-    Rup(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+    Rup(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14, ctrans=nothing)
 
 Compute the upgoing radial Teukolsky solution at Boyer-Lindquist radius r.
-Uses the MST series expansion in HypergeometricU functions.
+Normalized by Ctrans = ω^{-1-2s} A^ν_- exp(i(ε log ε - (1-κ)/2 ε)) so that:
+
+    Rup ~ r^{-1-2s} e^{+iωr*}  at r → ∞
+
+Matches Mathematica's MSTRadialUp convention (norm = UpTrans).
+
+If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
+used directly and `A^ν_-` is not recomputed.
 """
-function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=nothing)
+function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14,
+             ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -87,19 +101,33 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=not
     end
 
     raw = result + res_down
-    if norm === nothing
-        return raw
+
+    # Normalize by Ctrans = ω^{-1-2s} A^ν_- exp(i(ε log ε - (1-κ)/2 ε))
+    # Matches Mathematica: prefac/UpTrans (MST.m line 640)
+    # Use caller-supplied ctrans when available to avoid recomputing A^ν_-.
+    ct = if ctrans !== nothing
+        ctrans
     else
-        return raw / norm
+        Am = compute_Aminus(p, ν, fn; nmax=nmax)
+        ω_c = p.ω
+        phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+        ω_c^(-1 - 2s) * Am * phase_conj
     end
+
+    return raw / ct
 end
 
 """
-    dRup(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+    dRup(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14, ctrans=nothing)
 
 Compute dR_up/dr at Boyer-Lindquist radius r.
+Normalized by the same Ctrans as `Rup`.
+
+If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
+used directly and `A^ν_-` is not recomputed.
 """
-function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=nothing)
+function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14,
+              ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -207,9 +235,16 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14, norm=no
     end
 
     raw = result + res_down
-    if norm === nothing
-        return raw
+
+    # Normalize by Ctrans (same as Rup)
+    ct = if ctrans !== nothing
+        ctrans
     else
-        return raw / norm
+        Am = compute_Aminus(p, ν, fn; nmax=nmax)
+        ω_c = p.ω
+        phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
+        ω_c^(-1 - 2s) * Am * phase_conj
     end
+
+    return raw / ct
 end
