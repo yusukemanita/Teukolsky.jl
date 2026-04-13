@@ -84,6 +84,34 @@ function Rin(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
 end
 
 """
+    Rin_phys(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
+
+Transmission-normalized ingoing Teukolsky solution, matching Mathematica's
+`TeukolskyRadial["In",...]` convention:
+
+    Rin_phys = Rin_raw / InTrans
+
+where `InTrans = Btrans = 4^s κ^{2s} exp(i(ε+τ)κ(½ + logκ/(1+κ))) Σfn`.
+
+This quantity is smooth across ν branch transitions (real / half-integer /
+integer), whereas the raw `Rin` can jump by a large factor at each branch
+boundary because it carries the ν-dependent normalization.
+
+Physical significance: the waveform formula G = Rin_raw × Bref / (2iω Binc)
+is already correct as written (Btrans cancels), but when comparing directly
+with Mathematica's MSTRadialIn output, use Rin_phys.
+"""
+function Rin_phys(p::MSTParams, ν, fn, r; nmax::Int=40, tol::Float64=1e-14)
+    raw = Rin(p, ν, fn, r; nmax=nmax, tol=tol)
+    # InTrans = Btrans (MST.m Teukolsky case, line 106)
+    s, ε, τ, κ = p.s, p.ϵ, p.τ, p.κ
+    Σfn = sum(get(fn, n, complex(0.0)) for n in -nmax:nmax)
+    prefac = ComplexF64(4)^s * κ^(2s) * exp(im * (ε + τ) * κ * (0.5 + log(κ) / (1 + κ)))
+    InTrans = prefac * Σfn
+    return raw / InTrans
+end
+
+"""
     dRin(p::MSTParams, ν, fn, r; nmax=40, tol=1e-14)
 
 Compute dR_in/dr at Boyer-Lindquist radius r.
