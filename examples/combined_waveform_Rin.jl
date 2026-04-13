@@ -40,21 +40,25 @@ N     = 4000
 Δω    = 2ω_max / N
 ω_grid = [(n - N÷2 + 0.5) * Δω for n in 0:N-1]
 
-GF     = Vector{ComplexF64}(undef, N)
-ν_prev = nothing
-print("G(ω) ($N points) ")
-for i in (N÷2 + 1):N
-    ω = ω_grid[i]
-    GF[i], ν_new = compute_G(s, l, m, a, ω, r_src; nmax=100, ν_init=ν_prev)
-    ν_prev = ν_new
-    i % 400 == 0 && (print("."); flush(stdout))
+function compute_GF_real_axis(s, l, m, a, ω_grid, r_src; nmax=100)
+    N  = length(ω_grid)
+    GF = Vector{ComplexF64}(undef, N)
+    ν_prev = nothing
+    for i in (N÷2 + 1):N
+        ω = ω_grid[i]
+        GF[i], ν_new = compute_G(s, l, m, a, ω, r_src; nmax=nmax, ν_init=ν_prev)
+        ν_prev = ν_new
+        i % 400 == 0 && (print("."); flush(stdout))
+    end
+    for i in 1:(N÷2)
+        GF[i] = conj(GF[N + 1 - i])
+    end
+    return GF
 end
-println(" done")
 
-# G(-ω) = conj(G(ω))
-for i in 1:(N÷2)
-    GF[i] = conj(GF[N + 1 - i])
-end
+print("G(ω) ($N points) ")
+GF = compute_GF_real_axis(s, l, m, a, ω_grid, r_src)
+println(" done")
 
 t_ini  = -100.0
 t_max  =  600.0
