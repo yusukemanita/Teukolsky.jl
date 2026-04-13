@@ -19,6 +19,13 @@ using BHPtoolkit, Plots, LaTeXStrings, Printf
 #    ΔG_-(σ) = G(+δ-iσ) - G(-δ-iσ)
 # ============================================================
 
+# ── Precision for real-axis waveform (Part 1) ────────────────
+# Set T = Float64 for speed, or T = BigFloat for extended precision.
+# Parts 2 & 3 (branch cuts) always use Float64.
+T    = Float64
+PREC = 256       # bits; only used when T = BigFloat
+T == BigFloat && setprecision(BigFloat, PREC)
+
 s, l, m = -2, 2, 2
 a       = 0.9
 r_src   = 10.0
@@ -35,14 +42,14 @@ end
 # ════════════════════════════════════════════════════════════
 println("=== Part 1: Real-axis waveform ===")
 
-N     = 4000
-ω_max = 2.0
-Δω    = 2ω_max / N
-ω_grid = [(n - N÷2 + 0.5) * Δω for n in 0:N-1]
+N      = 4000
+ω_max  = T(2.0)
+Δω     = 2ω_max / N
+ω_grid = T[(n - N÷2 + 0.5) * Δω for n in 0:N-1]
 
-function compute_GF_real_axis(s, l, m, a, ω_grid, r_src; nmax=100)
+function compute_GF_real_axis(s, l, m, a, ω_grid::Vector{T}, r_src; nmax=100) where T
     N  = length(ω_grid)
-    GF = Vector{ComplexF64}(undef, N)
+    GF = Vector{Complex{T}}(undef, N)
     ν_prev = nothing
     for i in (N÷2 + 1):N
         ω = ω_grid[i]
@@ -56,20 +63,20 @@ function compute_GF_real_axis(s, l, m, a, ω_grid, r_src; nmax=100)
     return GF
 end
 
-print("G(ω) ($N points) ")
+print("G(ω) ($N points, T=$T) ")
 GF = compute_GF_real_axis(s, l, m, a, ω_grid, r_src)
 println(" done")
 
-t_ini  = -100.0
-t_max  =  600.0
+t_ini  = T(-100.0)
+t_max  = T(600.0)
 Nt     = 7000
 t_grid = range(t_ini, t_max; length=Nt)
-ψ_real = Vector{ComplexF64}(undef, Nt)
-prefac = Δω / (2π)
+ψ_real = Vector{Complex{T}}(undef, Nt)
+prefac = Δω / T(2π)
 
 print("ψ_real ($Nt points) ")
 for (k, t) in enumerate(t_grid)
-    s_val = zero(ComplexF64)
+    s_val = zero(Complex{T})
     @inbounds for n in 1:N
         s_val += GF[n] * exp(-im * ω_grid[n] * t)
     end
@@ -94,11 +101,19 @@ Nσ_pos   = 300
 ΔG_pos = Vector{ComplexF64}(undef, Nσ_pos)
 print("ΔG_+(σ) ($Nσ_pos points) ")
 for i in 1:Nσ_pos
-    σ   = σ_grid_p[i]
-    G_R, _ = compute_G(s, l, m, a,  δ_pos + im*σ, r_src)
-    G_L, _ = compute_G(s, l, m, a, -δ_pos + im*σ, r_src)
+    σ     = σ_grid_p[i]
+    ω_R   = δ_pos + im*σ
+    amp_R = compute_amplitudes(s, l,  m, a, ω_R)
+    pR = MSTParams(s, l, m, a, ω_R)
+    G_R   = Rin(pR, amp_R.ν, amp_R.fn, r_src) * amp_R.Bref / (2im * ω_R * amp_R.Binc)
+
+    ω_L   = -δ_pos + im*σ
+    amp_m = compute_amplitudes(s, l, -m, a, δ_pos + im*σ)  # symmetry: G_L = conj(G(l,-m,ω_R))
+    pL = MSTParams(s, l, -m, a, ω_L)
+    G_L   = conj(Rin(pL, amp_m.ν, amp_m.fn, r_src) * amp_m.Bref / (2im * ω_L * amp_m.Binc))
+
     ΔG_pos[i] = G_R - G_L
-    i % 60 == 0 && (print("."); flush(stdout))
+    i % 40 == 0 && (print("."); flush(stdout))
 end
 println(" done")
 
@@ -108,13 +123,12 @@ t_neg    = range(-100.0, -0.5; length=500)
 
 # ════════════════════════════════════════════════════════════
 # Part 3: Branch cut — negative imaginary axis (t > 0)
-#   ΔG_-(σ) = G(+δ-iσ) - G(-δ-iσ)
 # ════════════════════════════════════════════════════════════
 println("\n=== Part 3: Branch cut, negative imaginary axis (t > 0) ===")
 
 Nσ_neg   = 300
 σ_min_n  = 1e-3
-σ_max_n  = 5.0
+σ_max_n  = 2.0
 δ_neg    = 1e-6
 σ_grid_n = exp.(range(log(σ_min_n), log(σ_max_n); length=Nσ_neg))
 Δσ_n     = diff([0.0; (σ_grid_n[1:end-1] .+ σ_grid_n[2:end]) ./ 2; σ_max_n])
@@ -122,11 +136,16 @@ Nσ_neg   = 300
 ΔG_neg = Vector{ComplexF64}(undef, Nσ_neg)
 print("ΔG_-(σ) ($Nσ_neg points) ")
 for i in 1:Nσ_neg
-    σ   = σ_grid_n[i]
-    G_R, _ = compute_G(s, l, m, a,  δ_neg - im*σ, r_src)
-    G_L, _ = compute_G(s, l, m, a, -δ_neg - im*σ, r_src)
-    ΔG_neg[i] = G_R - G_L
-    i % 60 == 0 && (print("."); flush(stdout))
+    σ      = σ_grid_n[i]
+    ω_R    = - im*σ
+    amp_R  = compute_amplitudes(s, l, m, a, ω_R; nmax=100)
+    q_info = compute_q(s, l, m, a, ω_R; nmax=100)
+    q_val  = q_info.q
+    # ΔG_-(σ) = iq Bref² / (2iω Binc (Binc + iq Bref))
+    pR = MSTParams(s, l, m, a, ω_R)
+    ΔG_neg[i] = Rin(pR, amp_R.ν, amp_R.fn, r_src) * im * q_val * amp_R.Bref^2 /
+                (2im * ω_R * amp_R.Binc * (amp_R.Binc + im * q_val * amp_R.Bref))
+    i % 40 == 0 && (print("."); flush(stdout))
 end
 println(" done")
 
@@ -139,7 +158,8 @@ t_pos    = range(1.0, 600.0; length=3000)
 # ════════════════════════════════════════════════════════════
 println("\nPlotting ...")
 
-t_arr = collect(t_grid)
+t_arr  = Float64.(collect(t_grid))
+GF_f64 = ComplexF64.(GF)
 
 # ── Plot 1: time-domain waveform + branch cuts ───────────────
 fig = plot(
@@ -150,9 +170,10 @@ fig = plot(
     framestyle = :box, grid = true,
     fontfamily = "Computer Modern", dpi = 150,
     legend     = :topright,
-    size       = (900, 500))
+    size       = (900, 500),
+    ylims      = (:auto, 1e0))
 
-plot!(fig, t_arr, abs.(real.(ψ_real));
+plot!(fig, t_arr, abs.(real.(ComplexF64.(ψ_real)));
     label  = L"\psi_{\rm real}\ (\omega\ \mathrm{integral})",
     lw = 2, color = :steelblue)
 
@@ -168,7 +189,7 @@ vline!(fig, [0.0]; label = "", color = :black, lw = 0.8, ls = :dot)
 
 # ── Plot 2: frequency-domain spectrum ────────────────────────
 fig_freq = plot(
-    Float64.(ω_grid), abs.(GF);
+    Float64.(ω_grid), abs.(GF_f64);
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"|G(\omega)|",
     label      = L"G(\omega) = R_{\rm in} B^{\rm ref}/(2i\omega B^{\rm inc})",
@@ -186,4 +207,4 @@ savefig(fig_freq, joinpath(outdir, "combined_waveform_Rin_freq.png"))
 println("Saved: combined_waveform_Rin.png, combined_waveform_Rin_freq.png")
 
 display(fig)
-display(fig_freq)
+# display(fig_freq)
