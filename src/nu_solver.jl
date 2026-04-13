@@ -203,6 +203,11 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         # arccos(rc) for rc < -1 (principal branch) = π - i*acosh(-rc),
         # so Im(arccos(rc)/(2π)) = -acosh(-rc)/(2π) < 0  →  η0 > 0.
         η0 = R(acosh(max(-rc, one(R))) / (2π))   # > 0
+        # Try ν_init first for branch continuity across transitions
+        if ν_init !== nothing
+            ν2, c2 = newton_from(ν_init)
+            c2 && return ν2, p
+        end
         # Try Re(ν) = 1/2 first (Mathematica convention), then l±1/2 as fallbacks
         for ν_re_try in R[R(0.5), l - R(0.5), l + R(0.5), l - R(1.5), R(-0.5)]
             ν2, c2 = newton_1d(ν_re_try,  η0)
@@ -221,6 +226,11 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         # arccos(rc) for rc > 1 (principal branch) = -i*acosh(rc),
         # so Im(arccos(rc)/(2π)) = -acosh(rc)/(2π) < 0  →  η0 > 0.
         η0 = R(acosh(max(rc, one(R))) / (2π))   # > 0
+        # Try ν_init first for branch continuity across transitions
+        if ν_init !== nothing
+            ν2, c2 = newton_from(ν_init)
+            c2 && return ν2, p
+        end
         for ν_re_try in R[R(0), R(1), R(-1), l, l - R(1)]
             ν2, c2 = newton_1d(ν_re_try,  η0)
             c2 && return ν2, p
