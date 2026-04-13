@@ -182,14 +182,19 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         ν2, c2 = newton_from(ComplexF64(l) - ν0);  c2 && return ν2, p
 
     elseif -1 ≤ rc ≤ 1
-        # Real ν branch: ν_init tracking is safe here
+        # Real ν branch.
+        # ν_init tracking is only safe when ν_init itself was on the real branch
+        # (Im(ν_init) ≈ 0). If ν_init came from a half/integer branch (Im large),
+        # Newton can stray to degenerate integer roots (ν=1,2,…) where the fn
+        # recurrence is ill-conditioned and Btrans → 0 spuriously.
+        # Use monodromy formula first; fall back to ν_init as secondary seed.
+        ν0 = ComplexF64(l) - acos(complex(rc)) / (2π)
+        ν, converged = newton_from(ν0)
+        converged && return ν, p
         if ν_init !== nothing
             ν2, c2 = newton_from(ν_init)
             c2 && return ν2, p
         end
-        ν0 = ComplexF64(l) - acos(complex(rc)) / (2π)
-        ν, converged = newton_from(ν0)
-        converged && return ν, p
 
     elseif rc < -1
         # Half-integer case: cos(2πν) < -1  →  Re(ν) = n + 1/2
