@@ -63,9 +63,9 @@ for (s, l, m, a, ω, label) in test_cases
 
         Rdown_val = Rdown(p, ν, fn, r; nmax=40)
         Rin_val   = Rin(p, ν, fn, r; nmax=40)
-        Rup_norm  = Rup(p, ν, fn, r; nmax=40, norm=amp.Ctrans)
+        Rup_val   = Rup(p, ν, fn, r; nmax=40)
 
-        Rdown_exp = (Rin_val - amp.Bref * Rup_norm) / amp.Binc
+        Rdown_exp = (Rin_val - amp.Bref * Rup_val) / amp.Binc
 
         rel_err = abs(Rdown_val - Rdown_exp) / abs(Rdown_exp)
         status = rel_err < tol ? "PASS" : "FAIL"

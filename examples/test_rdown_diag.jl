@@ -49,18 +49,13 @@ end
 println()
 println("="^90)
 println("Test 3: 'Expected' Rdown from Rin and Rup")
-println("  Rdown_expected = (Rin - Binc*Rup_normed) / Bref")
-println("  where Rup_normed = Rup(norm=Ctrans)")
+println("  Rdown_expected = (Rin - Binc*Rup) / Bref")
+println("  Rup is transmission-normalized: Rup ~ r^{-1-2s} e^{+iωr*}")
 println("="^90)
-# At infinity: Rin ~ Binc r^3 e^{-iωr*} + Bref r^{-1} e^{iωr*}
-# Rup_normed ~ r^{-1} e^{iωr*}  (Ctrans normalization, s=-2 so r^{-1-2s}=r^3)
-# Wait, actually Rup_MST ~ Ctrans r^{-1} e^{iωr*} = Am * ... * r^3 e^{iωr*}
-# With norm=Ctrans: Rup/Ctrans ~ r^3 e^{iωr*}
-# Hmm, for s=-2: Rup ~ Ctrans × r^{-1-2s} e^{iωr*} = Ctrans × r^3 e^{iωr*}
-# So Rup/Ctrans ~ r^3 e^{iωr*}
-# Rin ~ Binc r^3 e^{-iωr*} + Bref r^3 e^{iωr*}
-# Wait that doesn't look right either.
-# Let me just use the raw Rup (unnormalized) directly.
+# At infinity (s=-2):
+#   Rup  ~ r^{-1-2s} e^{+iωr*} = r^3 e^{+iωr*}   (outgoing, transmission-normalized)
+#   Rdown ~ r^{-1}   e^{-iωr*}                     (ingoing)
+#   Rin  ~ Binc × r^{-1} e^{-iωr*} + Bref × r^3 e^{+iωr*}
 # Rin = some_linear_combination of R^ν_+ and R^ν_-
 # From S&T: Rin = K^ν R^ν_C + K^{-ν-1} R^{-ν-1}_C
 # where R^ν_C is the Coulomb wave function series (NOT R^ν_+ or R^ν_-)
