@@ -11,14 +11,14 @@ using BHPtoolkit, Plots, LaTeXStrings, Printf
 # ============================================================
 
 # ── Parameters ───────────────────────────────────────────────
-const T = Float64          # precision: Float64 or BigFloat
+T = BigFloat                # precision: Float64 or BigFloat
 
 s, l, m   = -2, 2, 2
-a         = T(0.0)
+a         = T(0.9)
 r_src     = T(10.0)
 
-N         = 4000           # number of frequency points
-ω_max     = T(2.0)         # frequency cutoff [M⁻¹]
+N         = 100           # number of frequency points
+ω_max     = T(3.0)         # frequency cutoff [M⁻¹]
 
 t_ini     = T(-100.0)      # start time [M]
 t_max     = T(600.0)       # end time [M]
@@ -118,5 +118,5 @@ savefig(fig_time, joinpath(outdir, "waveform_time.png"))
 savefig(fig_freq, joinpath(outdir, "waveform_freq.png"))
 println("Saved: waveform_time.png, waveform_freq.png")
 
-display(fig_time)
+# display(fig_time)
 display(fig_freq)
