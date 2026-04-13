@@ -42,35 +42,58 @@ end
 end
 
 # ── G(ω) = Rin(r_src; ω) * Bref / (2iω Binc) を計算 ─────────
-# 正の周波数のみ計算し G(-ω) = conj(G(ω)) でミラー
-println("G(ω) を計算中 ($N 点, r_src = $r_src M) ...")
-GF = Vector{ComplexF64}(undef, N)
+# ブランチトラッキング: 正の周波数を小→大の順に計算し
+#   1. ν_init=ν_prev で前のブランチを引き継ぐ
+#   2. Im(ν)の符号反転を検出したら共役を使って符号を維持
+# 負の周波数は G(-ω) = conj(G(ω)) でミラー
 
-for i in (N÷2 + 1):N
-    ω = ω_grid[i]
-    w = taper_weight(ω, ω_max, taper_frac)
-    if iszero(w)
-        GF[i] = zero(ComplexF64)
-        continue
+function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
+    GF = Vector{ComplexF64}(undef, N)
+    local ν_prev = nothing
+    local n_jumps = 0
+    for i in (N÷2 + 1):N
+        ω = ω_grid[i]
+        w = taper_weight(ω, ω_max, taper_frac)
+        if iszero(w)
+            GF[i] = zero(ComplexF64)
+            continue
+        end
+
+        # Step 1: ν_init = ν_prev でブランチを引き継ぐ
+        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev)
+        ν   = amp.ν
+
+        # Step 2: Im(ν)の符号反転を検出したら共役ブランチを試みる
+        if ν_prev !== nothing && imag(ν_prev) * imag(ν) < -1e-10
+            ν_try   = conj(ν)
+            amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_try)
+            if imag(amp_try.ν) * imag(ν_prev) ≥ 0
+                amp = amp_try
+                ν   = amp.ν
+                n_jumps += 1
+            end
+        end
+
+        # Rin(r_src; ω) を評価
+        p       = MSTParams(s, l, m, a, ω)
+        Rin_val = Rin(p, ν, amp.fn, r_src)
+
+        GF[i]  = Rin_val * amp.Bref / (2im * ω * amp.Binc) * w
+        ν_prev = ν
+
+        i % 200 == 0 && (print("."); flush(stdout))
     end
+    println("\n完了 (符号反転修正: $n_jumps 回)")
 
-    # MST振幅 (ν, fn, Bref, Binc を返す)
-    amp = compute_amplitudes(s, l, m, a, ω)
-
-    # Rin(r_src; ω) を評価: compute_amplitudes と同じ p を再構築
-    p       = MSTParams(s, l, m, a, ω)
-    Rin_val = Rin(p, amp.ν, amp.fn, r_src)
-
-    GF[i] = Rin_val * amp.Bref / (2im * ω * amp.Binc) * w
-
-    i % 200 == 0 && (print("."); flush(stdout))
+    # 負周波数: G(-ω) = conj(G(ω)) （ψが実数値になる条件）
+    for i in 1:(N÷2)
+        GF[i] = conj(GF[N + 1 - i])
+    end
+    return GF
 end
 
-# 負周波数: G(-ω) = conj(G(ω)) （ψが実数値になる条件）
-for i in 1:(N÷2)
-    GF[i] = conj(GF[N + 1 - i])
-end
-println("\n完了")
+println("G(ω) を計算中 ($N 点, r_src = $r_src M, branch-tracked) ...")
+GF = compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
 
 # ── 時刻積分: ψ(u) = Δω/2π * Σ G(ω_n) e^{-iω_n u} ──────────
 t_grid = range(t_ini, t_max; length=Nt)
