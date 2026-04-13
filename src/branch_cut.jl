@@ -38,8 +38,8 @@ Named tuple `(q, ν, p, Ap, Am)`:
 - `Am`: A_-^ν normalization sum
 """
 function compute_q(s::Int, l::Int, m::Int, a, ω;
-                   nmax::Int=40, nmax_cf::Int=150)
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
+                   nmax::Int=40, nmax_cf::Int=150, ν_init=nothing)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init)
     fn   = compute_fn(p, ν; nmax=nmax)
 
     Ap = compute_Aplus(p, ν, fn; nmax=nmax)

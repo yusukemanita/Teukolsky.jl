@@ -2,6 +2,7 @@
 #  Monodromy method for cos(2πν)
 # ============================================================
 
+
 """
     monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=60)
 
@@ -54,8 +55,8 @@ function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
 
     n    = nmax
     jmax = cld(n, 2)
-    a1sum = gamma(-μ2C + μ1C) * sum(a1[j+1] * Poch_p[n-j+1] for j in 0:jmax)
-    a2sum = gamma( μ2C - μ1C) * sum((-1)^j * a2[j+1] * Poch_m[n-j+1] for j in 0:jmax)
+    a1sum = _cgamma(-μ2C + μ1C) * sum(a1[j+1] * Poch_p[n-j+1] for j in 0:jmax)
+    a2sum = _cgamma( μ2C - μ1C) * sum((-1)^j * a2[j+1] * Poch_m[n-j+1] for j in 0:jmax)
 
     return cos(π*(μ1C - μ2C)) + (2π^2 / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
 end
@@ -84,27 +85,31 @@ end
 # ============================================================
 
 """
-    compute_nu(s, l, m, a, ω; nmax_cf=150, tol=-1, maxiter=200, precision=64)
+    compute_nu(s, l, m, a, ω; nmax_cf=150, tol=-1, maxiter=200, precision=64, ν_init=nothing)
 
 Solve for ν using monodromy method + Newton refinement.
 
 - `tol`: convergence tolerance. Default (`tol=-1`) auto-scales: ~100·eps(R).
 - `precision`: bits of floating-point (64 = Float64, ≥128 = BigFloat).
+- `ν_init`: optional initial guess for ν (tried first, before monodromy guess).
+  Useful for branch tracking along a parameter path.
 """
 function compute_nu(s::Int, l::Int, m::Int, a, ω;
                     nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
-                    precision::Int=64)
+                    precision::Int=64, ν_init=nothing)
     if precision > 64
         return setprecision(BigFloat, precision) do
             compute_nu(s, l, m, BigFloat(a), Complex{BigFloat}(complex(ω));
-                       nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64)
+                       nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64,
+                       ν_init=ν_init === nothing ? nothing : Complex{BigFloat}(ν_init))
         end
     end
-    _compute_nu_impl(s, l, m, a, ω; nmax_cf, tol, maxiter)
+    _compute_nu_impl(s, l, m, a, ω; nmax_cf, tol, maxiter, ν_init)
 end
 
 function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
-                           nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200)
+                           nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
+                           ν_init=nothing)
     p = MSTParams(s, l, m, a, ω)
     R = typeof(p.a)
 
@@ -133,6 +138,12 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         end
         g_final = g0(ν)
         return ν, isfinite(g_final) && abs(g_final) < sqrt(tol_use)
+    end
+
+    # If ν_init is provided, try it first (branch tracking)
+    if ν_init !== nothing
+        ν2, c2 = newton_from(ν_init)
+        c2 && return ν2, p
     end
 
     c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ)

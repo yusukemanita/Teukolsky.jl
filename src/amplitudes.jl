@@ -8,7 +8,7 @@ function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=40, nmin::Int=-nmax)
 
     prefactor = exp(-π*ϵ/2) * exp(π*im*(ν+1-s)/2) *
                 T(2)^(-1+s-im*ϵ) *
-                gamma(ν + 1 - s + im*ϵ) / gamma(ν + 1 + s - im*ϵ)
+                _cgamma(ν + 1 - s + im*ϵ) / _cgamma(ν + 1 + s - im*ϵ)
 
     Σ = sum(fn[n] for n in nmin:nmax)
 
@@ -49,11 +49,11 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     for n in r:nmax
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n * gamma(T(n + r) + 2ν + 1) / gamma(T(n - r + 1)) *
-               gamma(T(n) + ν + 1 + s + im*ϵ) /
-               gamma(T(n) + ν + 1 - s - im*ϵ) *
-               gamma(T(n) + ν + 1 + im*τ) /
-               gamma(T(n) + ν + 1 - im*τ) *
+        term = (-1)^n * _cgamma(T(n + r) + 2ν + 1) / _cgamma(T(n - r + 1)) *
+               _cgamma(T(n) + ν + 1 + s + im*ϵ) /
+               _cgamma(T(n) + ν + 1 - s - im*ϵ) *
+               _cgamma(T(n) + ν + 1 + im*τ) /
+               _cgamma(T(n) + ν + 1 - im*τ) *
                fn_n
         num_sum += term
     end
@@ -62,7 +62,7 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / gamma(T(r - n + 1)) /
+        term = (-1)^n / _cgamma(T(r - n + 1)) /
                pochhammer(r + 2ν + 2, n) *
                pochhammer(ν + 1 + s - im*ϵ, n) /
                pochhammer(ν + 1 - s + im*ϵ, n) *
@@ -72,11 +72,11 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
 
     prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - ν - r) * T(2)^(-s) /
                 im^r *
-                gamma(T(1) - s - 2im*ϵp) *
-                gamma(T(r) + 2ν + 2) /
-                (gamma(T(r) + ν + 1 - s + im*ϵ) *
-                 gamma(T(r) + ν + 1 + im*τ) *
-                 gamma(T(r) + ν + 1 + s + im*ϵ))
+                _cgamma(T(1) - s - 2im*ϵp) *
+                _cgamma(T(r) + 2ν + 2) /
+                (_cgamma(T(r) + ν + 1 - s + im*ϵ) *
+                 _cgamma(T(r) + ν + 1 + im*τ) *
+                 _cgamma(T(r) + ν + 1 + s + im*ϵ))
 
     return prefactor * num_sum / den_sum
 end
@@ -92,8 +92,8 @@ Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
 Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
 """
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
-                            nmax::Int=40, nmax_cf::Int=150)
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
+                            nmax::Int=40, nmax_cf::Int=150, ν_init=nothing)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init)
 
     fn = compute_fn(p, ν; nmax=nmax)
 
@@ -185,11 +185,11 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     for n in r:nmax
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n * gamma(T(n + r) + 2ν + 1) / gamma(T(n - r + 1)) *
-               gamma(T(n) + ν + 1 + s + im*ϵ) /
-               gamma(T(n) + ν + 1 - s - im*ϵ) *
-               gamma(T(n) + ν + 1 + im*τ) /
-               gamma(T(n) + ν + 1 - im*τ) *
+        term = (-1)^n * _cgamma(T(n + r) + 2ν + 1) / _cgamma(T(n - r + 1)) *
+               _cgamma(T(n) + ν + 1 + s + im*ϵ) /
+               _cgamma(T(n) + ν + 1 - s - im*ϵ) *
+               _cgamma(T(n) + ν + 1 + im*τ) /
+               _cgamma(T(n) + ν + 1 - im*τ) *
                fn_n
         num_sum += term
     end
@@ -198,7 +198,7 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / gamma(T(r - n + 1)) /
+        term = (-1)^n / _cgamma(T(r - n + 1)) /
                pochhammer(r + 2ν + 2, n) *
                pochhammer(ν + 1 + s - im*ϵ, n) /
                pochhammer(ν + 1 - s + im*ϵ, n) *
@@ -208,11 +208,11 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=40, r::Int=0)
 
     prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - r) * T(2)^(-s) /
                 im^r *
-                gamma(T(1) - s - 2im*ϵp) *
-                gamma(T(r) + 2ν + 2) /
-                (gamma(T(r) + ν + 1 - s + im*ϵ) *
-                 gamma(T(r) + ν + 1 + im*τ) *
-                 gamma(T(r) + ν + 1 + s + im*ϵ))
+                _cgamma(T(1) - s - 2im*ϵp) *
+                _cgamma(T(r) + 2ν + 2) /
+                (_cgamma(T(r) + ν + 1 - s + im*ϵ) *
+                 _cgamma(T(r) + ν + 1 + im*τ) *
+                 _cgamma(T(r) + ν + 1 + s + im*ϵ))
 
     return prefactor * num_sum / den_sum
 end

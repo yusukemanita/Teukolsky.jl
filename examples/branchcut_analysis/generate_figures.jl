@@ -17,16 +17,17 @@ using DataFrames
 #    convergence_sigma_max.pdf   (Fig. 3)
 # ============================================================
 
-const OUTDIR = @__DIR__
-const s, l, m = -2, 2, 2
-const a = 0.9
+OUTDIR = @__DIR__
+s, l, m = -2, 2, 2
+a = 0.9
 
 gr()   # GR backend — saves PDF/PNG without extra dependencies
 
 # ── helper: load QNM excitation factor ───────────────────────
 
 function load_qnm_data(l::Int, m::Int, n::Int, a_target::Float64)
-    filepath = "/Users/yusuke/Downloads/KerrQNMEFs-2/l2/s-2l$(l)m$(m)n$n.dat"
+    filepath = "/Users/yusuke/Downloads/KerrQNMEFs-2/l2/s-2l$(l)m$(m)n$(n).dat"
+    println("Loading QNM data from: $filepath")
     df  = CSV.read(filepath, DataFrame, header=false)
     idx = argmin(abs.(df[!, 1] .- a_target))
     ω   = (df[idx, 2] + im * df[idx, 3]) / 2
@@ -34,20 +35,39 @@ function load_qnm_data(l::Int, m::Int, n::Int, a_target::Float64)
     return ω, B
 end
 
-# ── helper: compute ΔG⁻(σ) on neg. imag. axis (BigFloat) ────
+# ── helper: compute ΔG⁻(σ) on neg. imag. axis ────────────────
+# use_bigfloat=true  → BigFloat arithmetic (slow, high precision)
+# use_bigfloat=false → Float64 arithmetic (fast)
 
-function compute_DG_neg(σ_grid::Vector{BigFloat}, a_bf, δ_bf)
+function compute_DG_neg(σ_grid::Vector{Float64}, a_val; use_bigfloat::Bool=true)
     Nσ = length(σ_grid)
-    ΔG = Vector{Complex{BigFloat}}(undef, Nσ)
+    if use_bigfloat
+        ΔG  = Vector{Complex{BigFloat}}(undef, Nσ)
+        a_c = BigFloat(a_val)
+    else
+        ΔG  = Vector{ComplexF64}(undef, Nσ)
+        a_c = Float64(a_val)
+    end
+    ν_prev = nothing   # branch tracking: carry ν from previous σ
     for i in 1:Nσ
-        σ      = σ_grid[i]
-        ω_R    = δ_bf - im*σ
-        amp_R  = compute_amplitudes(s, l,  m, a_bf, ω_R)
-        G_R    = amp_R.Bref / (2im * ω_R * amp_R.Binc)
-        ω_mir  = δ_bf + im*σ
-        amp_m  = compute_amplitudes(s, l, -m, a_bf, ω_mir)
-        G_L    = conj(amp_m.Bref) / (2im*(-δ_bf - im*σ)*conj(amp_m.Binc))
-        ΔG[i]  = G_R - G_L
+        σ      = use_bigfloat ? BigFloat(σ_grid[i]) : σ_grid[i]
+        ω_R    = -im*σ
+        q_info = compute_q(s, l, m, a_c, ω_R; nmax=60, ν_init=ν_prev)
+        ν_cur  = q_info.ν
+
+        # Branch-jump detection: reject if ν jumped too far from previous value
+        if ν_prev !== nothing && abs(ν_cur - ν_prev) > 0.3
+            @warn "Branch jump at σ=$(Float64(σ)): Δν=$(abs(ν_cur-ν_prev)). Retrying with tighter step."
+            # retry with previous ν as seed (no fallback)
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150, ν_init=ν_prev)
+            ν_cur  = q_info.ν
+        end
+
+        amp_R  = compute_amplitudes(s, l,  m, a_c, ω_R; ν_init=ν_cur)
+        q_val  = q_info.q
+        ν_prev = ν_cur   # update branch for next step
+        ΔG[i]  = im * q_val * amp_R.Bref^2 /
+                (2im * ω_R * amp_R.Binc * (amp_R.Binc + im * q_val * amp_R.Bref))
         i % 20 == 0 && (print("."); flush(stdout))
     end
     return ΔG
@@ -85,16 +105,12 @@ end
 
 println("====== 共有計算: ΔG を計算 ======")
 
-# ── Neg. imag. axis (BigFloat 256-bit) ───────────────────────
-println("\n--- ΔG⁻(σ)  [neg. imag. axis, BigFloat] ---")
-setprecision(BigFloat, 256)
-a_bf  = BigFloat(string(a))
-δ_bf  = BigFloat("1e-6")
-Nσ_n  = 150
+# ── Neg. imag. axis ───────────────────────────────────────────
+USE_BIGFLOAT_NEG = false   # ← set false for Float64, true for BigFloat
+println("\n--- ΔG⁻(σ)  [neg. imag. axis, $(USE_BIGFLOAT_NEG ? "BigFloat" : "Float64")] ---")
+Nσ_n  = 500
 σ_n_f64, Δσ_n_f64 = logspaced_weights(1e-3, 5.0, Nσ_n)
-σ_n   = BigFloat.(σ_n_f64)
-Δσ_n  = BigFloat.(Δσ_n_f64)
-ΔG_n  = compute_DG_neg(σ_n, a_bf, δ_bf)
+ΔG_n  = compute_DG_neg(σ_n_f64, a; use_bigfloat=USE_BIGFLOAT_NEG)
 println(" 完了")
 
 # ── Pos. imag. axis (Float64) ─────────────────────────────────
@@ -127,16 +143,16 @@ println("\n--- 時刻積分 ψ_BC⁻ ---")
 for (k, t) in enumerate(t_pos)
     sv = zero(Complex{BigFloat})
     for i in 1:Nσ_n
-        sv += ΔG_n[i] * Δσ_n[i] * exp(-σ_n[i]*BigFloat(t))
+        sv += ΔG_n[i] * Δσ_n_f64[i] * exp(-σ_n_f64[i]*BigFloat(t))
     end
     ψ_BC_neg[k] = ComplexF64(im/(2π) * sv)
     k % 100 == 0 && (print("."); flush(stdout))
 end
 println(" 完了")
 
-ψ_QNM = [-sum(B_n*exp(-im*ω_n*t) for (ω_n, B_n) in all_modes)
-         for t in t_pos]
-ψ_sum = ψ_QNM .+ ψ_BC_neg
+ψ_QNM = [-sum(B_n*exp(-im*ω_n*t) for (ω_n, B_n) in qnm_pro) for t in t_all] .+ 
+    [-sum(B_n*exp(-im*ω_n*t) for (ω_n, B_n) in qnm_retro) for t in t_all]
+# ψ_sum = ψ_QNM .+ ψ_BC_neg
 
 # ============================================================
 # Figure 1: waveform_decomposition.pdf
@@ -148,12 +164,7 @@ println("\n====== Fig.1: waveform_decomposition ======")
 idx_pos  = findall(t_all .> 0.0)
 t_ref    = t_all[idx_pos]
 ψ_ref    = ψ_num[idx_pos]
-residual = [abs(real(ψ_ref[argmin(abs.(t_ref .- t))]) - real(ψ_sum[k]))
-            for (k, t) in enumerate(t_pos)]
-
-# numerical − QNM: should match ψ_BC⁻ and reveal the late-time tail
-ψ_num_minus_QNM = [ψ_ref[argmin(abs.(t_ref .- t))] - ψ_QNM[k]
-                   for (k, t) in enumerate(t_pos)]
+ψ_num_minus_QNM = ψ_ref .- ψ_QNM[idx_pos]
 
 p1 = plot(
     xlabel = L"t/M",
@@ -165,33 +176,16 @@ plot!(p1, t_all, abs.(real.(ψ_num)),
 plot!(p1, t_neg, abs.(real.(ψ_BC_pos)),
     label = L"\psi_{BC}^{+}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
 plot!(p1, t_pos, abs.(real.(ψ_BC_neg)),
-    label = L"\psi_{BC}^{-}\ (t>0)", lw = 1.5, color = :darkorange, ls = :dash)
-plot!(p1, t_pos, abs.(real.(ψ_QNM)),
+    label = L"\psi_{BC}^{-}\ (t>0)", lw = 1.5, color = :darkorange, ls = :solid)
+plot!(p1, t_ref, abs.(real.(ψ_QNM[idx_pos])),
     label = L"\psi_{QNM}\ (n\leq 7,\ \pm m)",
-    lw = 1.5, color = :darkgreen, ls = :dash)
-plot!(p1, t_pos, abs.(real.(ψ_num_minus_QNM)),
+    lw = 1, color = :darkgreen, ls = :dash)
+plot!(p1, t_ref, abs.(real.(ψ_num_minus_QNM)),
     label = L"\psi_{num}-\psi_{QNM}",
-    lw = 1.5, color = :magenta, ls = :dashdot)
-plot!(p1, t_pos, abs.(real.(ψ_sum)),
-    label = L"\psi_{QNM}+\psi_{BC}^{-}",
-    lw = 1.5, color = :purple, ls = :dot)
+    lw = 1, color = :magenta, ls = :dash)
 vline!(p1, [0.0], label = "", color = :black, lw = 0.8, ls = :dash)
 
-p2 = plot(
-    xlabel = L"t/M",
-    ylabel = L"|\mathrm{residual}|",
-    yscale = :log10,
-    framestyle = :box, grid = true, legend = :topright)
-plot!(p2, t_pos, residual,
-    label = L"|\psi_{num} - \psi_{QNM} - \psi_{BC}^-|",
-    lw = 1.5, color = :gray)
-plot!(p2, t_all, abs.(real.(ψ_num)),
-    label = "Numerical (ref.)", lw = 1, color = :steelblue, alpha = 0.4)
-
-fig1 = plot(p1, p2, layout = (2,1), size = (800, 700), dpi = 150,
-            fontfamily = "Computer Modern",
-            title = ["Waveform decomposition  (s=$s, l=$l, m=$m, a=$a)" ""])
-savefig(fig1, joinpath(OUTDIR, "waveform_decomposition.pdf"))
+savefig(p1, joinpath(OUTDIR, "waveform_decomposition.pdf"))
 println("  → waveform_decomposition.pdf")
 
 # ============================================================
@@ -209,7 +203,7 @@ fig2 = plot(
     ylabel = L"|\Delta G^-(\sigma)|\,e^{-\sigma t}",
     yscale = :log10, ylim = (1e-20, 1e2),
     title  = "Integrand decay vs. \$\\sigma\$ for several \$t\$  (neg. axis)",
-    framestyle = :box, grid = true, legend = :topright,
+    framestyle = :box, grid = true, legend = :bottomright,
     size = (750, 450), dpi = 150, fontfamily = "Computer Modern")
 
 for (t, c) in zip(t_show, colors2)
