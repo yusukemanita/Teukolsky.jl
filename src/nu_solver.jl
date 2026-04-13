@@ -123,6 +123,7 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         βn(p, ν, 0) + αn(p, ν, 0) * R1 + γn(p, ν, 0) * Lm1
     end
 
+    # Unconstrained 2D complex Newton
     function newton_from(ν0; max_step=R(2))
         ν = Complex{R}(ν0)
         for _ in 1:maxiter
@@ -140,36 +141,102 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
         return ν, isfinite(g_final) && abs(g_final) < sqrt(tol_use)
     end
 
-    # If ν_init is provided, try it first (branch tracking)
-    if ν_init !== nothing
-        ν2, c2 = newton_from(ν_init)
-        c2 && return ν2, p
+    # Constrained 1D real Newton: Re(ν) fixed, search Im(ν) only.
+    # Solves Re(g0(ν_re + i·η)) = 0 for real η.
+    # Matches Mathematica's FindRoot[Re[g[1/2 + I νi]] == 0, {νi, ...}].
+    function newton_1d(ν_re, η0; max_step=1.0)
+        η = R(η0)
+        ν_re_R = R(ν_re)
+        for _ in 1:maxiter
+            ν  = Complex{R}(ν_re_R, η)
+            g  = real(g0(ν))
+            abs(g) < tol_use && return Complex{R}(ν_re_R, η), true
+            gp = real(g0(Complex{R}(ν_re_R, η + δ)) - g0(Complex{R}(ν_re_R, η - δ))) / (2δ)
+            abs(gp) < 1e-30 && break
+            Δη = -g / gp
+            abs(Δη) > max_step && (Δη *= max_step / abs(Δη))
+            η += Δη
+            abs(Δη) < tol_use && return Complex{R}(ν_re_R, η), true
+        end
+        ν_fin = Complex{R}(ν_re_R, η)
+        return ν_fin, abs(real(g0(ν_fin))) < sqrt(tol_use)
     end
 
+    # Compute monodromy first to classify the branch
     c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ)
-    ν0, case = nu_initial_guess(c2pn, l)
+    rc   = real(c2pn)
 
-    ν, converged = newton_from(ν0)
-    converged && return ν, p
+    if imag(complex(ω)) != 0
+        # Complex ω: ν_init tracking is safe, use unconstrained 2D Newton
+        if ν_init !== nothing
+            ν2, c2 = newton_from(ν_init)
+            c2 && return ν2, p
+        end
+        # Use l-offset form (same as real branch) so that ν₀ ≈ l for small Im(ω).
+        # Without the offset, acos(c2pn)/(2π) ≈ 0 and Newton may converge to the
+        # spurious root ν=0 instead of the physical ν≈l root.
+        ν0 = ComplexF64(l) - acos(complex(c2pn)) / (2π)
+        ν, converged = newton_from(ν0)
+        converged && return ν, p
+        ν2, c2 = newton_from(conj(ν0));  c2 && return ν2, p
+        ν2, c2 = newton_from(ComplexF64(l) - ν0);  c2 && return ν2, p
 
-    # Fallback 1: conjugate of monodromy guess
-    if case != :real
-        ν2, c2 = newton_from(conj(ν0))
-        c2 && return ν2, p
+    elseif -1 ≤ rc ≤ 1
+        # Real ν branch: ν_init tracking is safe here
+        if ν_init !== nothing
+            ν2, c2 = newton_from(ν_init)
+            c2 && return ν2, p
+        end
+        ν0 = ComplexF64(l) - acos(complex(rc)) / (2π)
+        ν, converged = newton_from(ν0)
+        converged && return ν, p
+
+    elseif rc < -1
+        # Half-integer case: cos(2πν) < -1  →  Re(ν) = n + 1/2
+        # Mathematica always uses Re(ν) = 1/2 (not l-1/2).
+        # Convention: ν = 1/2 - Im(arccos(rc)/(2π))*i
+        # arccos(rc) for rc < -1 (principal branch) = π - i*acosh(-rc),
+        # so Im(arccos(rc)/(2π)) = -acosh(-rc)/(2π) < 0  →  η0 > 0.
+        η0 = R(acosh(max(-rc, one(R))) / (2π))   # > 0
+        # Try Re(ν) = 1/2 first (Mathematica convention), then l±1/2 as fallbacks
+        for ν_re_try in R[R(0.5), l - R(0.5), l + R(0.5), l - R(1.5), R(-0.5)]
+            ν2, c2 = newton_1d(ν_re_try,  η0)
+            c2 && return ν2, p
+            ν2, c2 = newton_1d(ν_re_try, -η0)
+            c2 && return ν2, p
+        end
+        # Fallback: unconstrained 2D Newton from monodromy guess
+        ν0 = ComplexF64(l) - acos(complex(c2pn)) / (2π)
+        ν, converged = newton_from(ν0);  converged && return ν, p
+        ν2, c2 = newton_from(conj(ν0));  c2 && return ν2, p
+
+    else  # rc > 1
+        # Integer (pure-imaginary) case: cos(2πν) > 1  →  Re(ν) = 0
+        # Mathematica uses Re(ν) = 0.
+        # arccos(rc) for rc > 1 (principal branch) = -i*acosh(rc),
+        # so Im(arccos(rc)/(2π)) = -acosh(rc)/(2π) < 0  →  η0 > 0.
+        η0 = R(acosh(max(rc, one(R))) / (2π))   # > 0
+        for ν_re_try in R[R(0), R(1), R(-1), l, l - R(1)]
+            ν2, c2 = newton_1d(ν_re_try,  η0)
+            c2 && return ν2, p
+            ν2, c2 = newton_1d(ν_re_try, -η0)
+            c2 && return ν2, p
+        end
+        ν0 = ComplexF64(l) - acos(complex(c2pn)) / (2π)
+        ν, converged = newton_from(ν0);  converged && return ν, p
     end
 
-    # Fallback 3: real part only
-    ν2, c2 = newton_from(real(ν0))
-    c2 && return ν2, p
-
-    # Fallback 4: canonical seeds based on Im(ω)
-    im_ω = imag(complex(ω))
-    for ν_try in [Complex{R}(l, im_ω), Complex{R}(l, -im_ω),
-                   Complex{R}(l + 0.5, im_ω), Complex{R}(l - 0.5, im_ω)]
+    # Final fallback: try a grid of seeds
+    ν0_fb = ComplexF64(l) - acos(complex(c2pn)) / (2π)
+    im_ω  = imag(complex(ω))
+    for ν_try in [ν0_fb, conj(ν0_fb), real(ν0_fb) + 0im,
+                   Complex{R}(l, im_ω), Complex{R}(l, -im_ω),
+                   Complex{R}(l - R(0.5), 0), Complex{R}(l + R(0.5), 0)]
         ν2, c2 = newton_from(ν_try)
         c2 && return ν2, p
     end
 
-    @warn "compute_nu: Newton did not converge, |g| = $(abs(g0(ν)))"
-    return ν, p
+    @warn "compute_nu: Newton did not converge, |g| = $(abs(g0(ν0_fb)))"
+    ν_best, _ = newton_from(ν0_fb)
+    return ν_best, p
 end
