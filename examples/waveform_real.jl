@@ -14,12 +14,12 @@ using Plots, LaTeXStrings, Printf
 # ============================================================
 
 s, l, m   = -2, 2, 2
-a         = 0.9
+a         = 0.0
 r_src     = 10.0        # source position r' [M]
 
 N         = 4000        # 周波数点数（正負合わせて）
-ω_max     = 6.0         # 周波数打ち切り [M⁻¹]
-taper_frac = 0.1        # Planck taperの割合
+ω_max     = 2.0         # 周波数打ち切り [M⁻¹]
+taper_frac = 0.0        # Planck taperの割合
 
 t_ini     = -100.0      # 時刻始点 [M]
 t_max     =  600.0      # 時刻終点 [M]
@@ -60,13 +60,13 @@ function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
         end
 
         # Step 1: ν_init = ν_prev でブランチを引き継ぐ
-        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev)
+        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=100)
         ν   = amp.ν
 
         # Step 2: Im(ν)の符号反転を検出したら共役ブランチを試みる
         if ν_prev !== nothing && imag(ν_prev) * imag(ν) < -1e-10
             ν_try   = conj(ν)
-            amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_try)
+            amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_try, nmax=100)
             if imag(amp_try.ν) * imag(ν_prev) ≥ 0
                 amp = amp_try
                 ν   = amp.ν
@@ -80,7 +80,7 @@ function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
             if abs(real(ν) - real(ν_prev)) > 0.5
                 for δ_im in [1e-4, -1e-4, 5e-4, -5e-4, 1e-3, -1e-3]
                     ν_seed  = real(ν_prev) + im * (imag(ν_prev) + δ_im)
-                    amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_seed)
+                    amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_seed, nmax=100)
                     ν_try   = amp_try.ν
                     if abs(ν_try - ν_prev) < abs(ν - ν_prev)
                         amp = amp_try; ν = ν_try
@@ -91,7 +91,7 @@ function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
             end
             # (B) |Im(ν)| 爆発 → 偽根を拒否して ν_prev で再試行
             if abs(imag(ν)) > max(10 * abs(imag(ν_prev)) + 2.0, 5.0)
-                amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev)
+                amp_try = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=100)
                 ν_try   = amp_try.ν
                 if abs(imag(ν_try)) < abs(imag(ν))
                     amp = amp_try; ν = ν_try
@@ -102,7 +102,7 @@ function compute_GF(s, l, m, a, ω_grid, N, r_src, taper_frac, ω_max)
 
         # Rin(r_src; ω) を評価
         p       = MSTParams(s, l, m, a, ω)
-        Rin_val = Rin(p, ν, amp.fn, r_src)
+        Rin_val = Rin(p, ν, amp.fn, r_src; nmax=100)
 
         GF[i]  = Rin_val * amp.Bref / (2im * ω * amp.Binc) * w
         ν_prev = ν

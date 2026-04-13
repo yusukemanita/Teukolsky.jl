@@ -40,7 +40,7 @@ function compute_Rin_sweep(s, l, m, a, ω_grid, r_src; nmax=60)
         ν   = amp.ν
 
         p_mst = MSTParams(s, l, m, a, ω)
-        Rin_vals[i] = Rin(p_mst, ν, amp.fn, r_src; nmax=nmax) / amp.Btrans
+        Rin_vals[i] = Rin(p_mst, ν, amp.fn, r_src; nmax=nmax)
         GF_vals[i]  = Rin_vals[i] * amp.Bref / (2im * ω * amp.Binc)
         ν_vals[i]   = ν
         ν_prev      = ν

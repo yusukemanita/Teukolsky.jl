@@ -59,12 +59,8 @@ for i in 1:size(raw, 1)
     ν, p = compute_nu(s, l, m, a, ω)
     fn = compute_fn(p, ν; nmax=80)
 
-    # Raw Rin (unnormalized)
-    Rin_raw = Rin(p, ν, fn, r; nmax=80)
-
-    # Normalize by InTrans (Wolfram convention)
-    InTrans = compute_InTrans(p, fn; nmax=80)
-    Rin_julia = Rin_raw / InTrans
+    # Normalized Rin (transmission-normalized, matches Wolfram convention)
+    Rin_julia = Rin(p, ν, fn, r; nmax=80)
 
     rel_err = abs(Rin_julia - Rin_math) / abs(Rin_math)
     status = rel_err < tol ? "PASS" : "FAIL"
