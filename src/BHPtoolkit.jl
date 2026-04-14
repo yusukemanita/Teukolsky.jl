@@ -16,8 +16,8 @@ using LinearAlgebra, SpecialFunctions, Printf
 export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed
 export compute_amplitudes_mero, compute_amplitudes_nufixed_mero
-export compute_q
-export Rin, Rin_phys, dRin, Rup, dRup, Rdown
+export compute_q, compute_qtilde
+export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
 export pochhammer
 
