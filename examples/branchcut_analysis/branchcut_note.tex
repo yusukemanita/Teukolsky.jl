@@ -387,7 +387,7 @@ with the criterion~\eqref{eq:criterion}.
 \section{Derivation of $\tilde{q}$}
 \subsection{MST series for \texorpdfstring{$R^{\rm down}$}{Rdown}}
 
-In the MST formalism (Sasaki--Tagoshi Eq.~159),
+In the MST formalism~\cite{SasakiTagoshi2003} (Eq.~159),
 $R^{\rm down} = R^\nu_+ / R^{\mathrm{tra}}_+$ with the
 Coulomb-wave expansion
 \begin{equation}
@@ -426,7 +426,7 @@ The normalisation constants are
   \label{eq:Ctrans}
 \end{align}
 where $A^\nu_\pm$ are the MST asymptotic amplitude sums
-(Sasaki--Tagoshi Eqs.~157--158).
+\cite{SasakiTagoshi2003} (Eqs.~157--158).
 
 \subsection{Connection formula for $U$ under \texorpdfstring{$2\pi$}{2pi} rotation}
 
@@ -531,7 +531,7 @@ so it drops out of the difference~\eqref{eq:deltaRdown}, leaving
 
 \subsection{Identification with \texorpdfstring{$R^{\rm up}$}{Rup}}
 
-The MST upgoing solution (Sasaki--Tagoshi Eq.~153) is
+The MST upgoing solution~\cite{SasakiTagoshi2003} (Eq.~153) is
 \begin{equation}
   R^{\rm up}
   = \frac{g(\epsilon)}{C^{\mathrm{trans}}}
@@ -598,7 +598,7 @@ so that
     \epsilon^{2i\epsilon}\;e^{-i(1-\kappa)\epsilon}\;
     \bigl(1 - e^{2\pi(\epsilon + i\nu)}\bigr).
   }
-  \label{eq:qtilde}
+  \label{eq:qtilde_final}
 \end{equation}
 This is the branch-cut strength for $R^{\rm down}$ on the positive
 imaginary axis.
@@ -624,11 +624,23 @@ imaginary axis.
 % This is implemented as \texttt{compute\_qtilde} in \texttt{src/branch\_cut.jl}.
 
 \begin{thebibliography}{9}
+
+%% Casals, Kavanagh, Ottewill 2016 — branch cut / late-time tails in Kerr
+%% INSPIRE: Casals:2016soq
 \bibitem{Casals2016}
-  M.~Casals and A.~Ottewill,
-  \textit{Branch cut and quasinormal modes at late times in rotating black holes},
-  Phys.\ Rev.\ D \textbf{94}, 064026 (2016),
-  arXiv:1608.05392.
+  M.~Casals, C.~Kavanagh and A.~C.~Ottewill,
+  ``High-order late-time tail in a Kerr spacetime,''
+  Phys.\ Rev.\ D \textbf{94}, no.~12, 124053 (2016),
+  [arXiv:1608.05392 [gr-qc]].
+
+%% Sasaki, Tagoshi 2003 — MST method review
+%% INSPIRE: Sasaki:2003xr
+\bibitem{SasakiTagoshi2003}
+  M.~Sasaki and H.~Tagoshi,
+  ``Analytic black hole perturbation approach to gravitational radiation,''
+  Living Rev.\ Rel.\ \textbf{6}, 6 (2003),
+  [arXiv:gr-qc/0306120].
+
 \end{thebibliography}
 
 \end{document}
