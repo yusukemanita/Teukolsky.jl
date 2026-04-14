@@ -20,8 +20,8 @@ using BHPtoolkit
         @test isfinite(result.Btrans)
         @test isfinite(result.Ctrans)
 
-        # Wronskian-like check: 2iω B^inc / B^trans should be O(1)
-        W = 2im * ω * result.Binc / result.Btrans
+        # Binc is normalized by Btrans; 2iω Binc should be O(1)
+        W = 2im * ω * result.Binc
         @test isfinite(W)
         @test abs(W) > 1e-10
     end

@@ -31,11 +31,9 @@ for (i, ω) in enumerate(ωs)
     ν   = amp.ν
     p   = MSTParams(s, l, m, a, ω)
     fn  = compute_fn(p, ν; nmax=nmax)
-    # Wolfram convention: Binc is normalized by Btrans (= 1 at horizon).
-    # Julia convention: Binc is the raw amplitude; Rin is divided by Btrans.
-    # Physical G = Rin_raw / (2iω Binc_raw) = Rin_norm × Btrans / (2iω Binc_raw)
-    #            = Rin_norm / (2iω (Binc_raw/Btrans))   ← matches Wolfram
-    G_julia[i] = Rin(p, ν, fn, r_src; nmax=nmax) * amp.Btrans / (2im * ω * amp.Binc)
+    # Binc is normalized by Btrans (matches Wolfram convention)
+    # G = Rin / (2iω Binc) directly
+    G_julia[i] = Rin(p, ν, fn, r_src; nmax=nmax) / (2im * ω * amp.Binc)
     i % 40 == 0 && (print("."); flush(stdout))
 end
 println(" done")
@@ -107,7 +105,7 @@ Binc_arr = Vector{ComplexF64}(undef, length(ωs))
 for (i, ω) in enumerate(ωs)
     amp          = compute_amplitudes(s, l, m, a, ω; nmax=nmax, nmax_cf=nmax_cf, method="Monodromy")
     ν_arr[i]    = amp.ν
-    Binc_arr[i] = amp.Binc / amp.Btrans   # normalized Binc (matches Wolfram convention)
+    Binc_arr[i] = amp.Binc   # already normalized by Btrans (Wolfram convention)
 end
 
 fig3 = plot(

@@ -18,7 +18,7 @@ a         = T(0.0)
 r_src     = T(10.0)
 
 N         = 1000           # number of frequency points
-ω_max     = T(2.0)         # frequency cutoff [M⁻¹]
+ω_max     = T(3.0)         # frequency cutoff [M⁻¹]
 
 t_ini     = T(-100.0)      # start time [M]
 t_max     = T(600.0)       # end time [M]
@@ -44,9 +44,8 @@ function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=100) where T
         end
         p   = MSTParams(s, l, m, a, ω)
         val = try
-            # Physical G = Rin_raw / (2iω Binc_raw) = Rin_norm × Btrans / (2iω Binc_raw)
-            # Julia's Binc is the raw amplitude; Rin() returns the transmission-normalized form.
-            Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Btrans / (2im * ω * amp.Binc)
+            # G = Rin / (2iω Binc) — Binc is normalized by Btrans (Wolfram convention)
+            Rin(p, ν, amp.fn, r_src; nmax=nmax) / (2im * ω * amp.Binc)
         catch
             i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
         end

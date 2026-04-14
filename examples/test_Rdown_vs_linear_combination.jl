@@ -62,10 +62,11 @@ for (s, l, m, a, ω, label) in test_cases
         r <= p.rp + 0.1 && continue
 
         Rdown_val = Rdown(p, ν, fn, r; nmax=40)
-        Rin_raw   = BHPtoolkit._Rin_raw(p, ν, fn, r; nmax=40)
+        Rin_val   = Rin(p, ν, fn, r; nmax=40)
         Rup_val   = Rup(p, ν, fn, r; nmax=40)
 
-        Rdown_exp = (Rin_raw - amp.Bref * Rup_val) / amp.Binc
+        # Rin_norm = Binc_norm × Rdown + Bref_norm × Rup  (all normalized by Btrans)
+        Rdown_exp = (Rin_val - amp.Bref * Rup_val) / amp.Binc
 
         rel_err = abs(Rdown_val - Rdown_exp) / abs(Rdown_exp)
         status = rel_err < tol ? "PASS" : "FAIL"

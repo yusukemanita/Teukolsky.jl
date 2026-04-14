@@ -91,6 +91,10 @@ end
 Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
 Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
 
+`Binc` and `Bref` are normalized by `Btrans` (i.e., Binc_raw/Btrans), matching the
+Wolfram Teukolsky package convention. The physical Green's function is then simply
+`G = Rin(r) / (2iω × Binc)`.
+
 `method` is passed to `compute_nu`: `"Monodromy"` (default) or `"Newton"`.
 """
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
@@ -138,7 +142,7 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
 
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
 
-    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+    return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
 end
 
@@ -193,7 +197,7 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
              exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
 
-    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+    return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
 end
 
@@ -288,7 +292,7 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
              exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
 
-    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+    return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
 end
 
@@ -339,6 +343,6 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
              exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
     Ctrans = ω_c^(-1 - 2s) * Am * phase_conj_mero
 
-    return (Binc=Binc, Bref=Bref, Btrans=Btrans, Ctrans=Ctrans,
+    return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
 end
