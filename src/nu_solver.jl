@@ -97,7 +97,7 @@ Solve for ν (renormalized angular momentum).
   refinement. Matches Wolfram Teukolsky package default behavior.
   - Real branch   (|rc| ≤ 1):   ν = l − arccos(rc)/(2π)
   - Half-integer  (rc < −1):    ν = 1/2 + i·acosh(−rc)/(2π)
-  - Integer       (rc > 1):     ν = i·acosh(rc)/(2π)
+  - Integer       (rc > 1):     ν = −i·acosh(rc)/(2π)
 
 - `"Newton"`: Monodromy initial guess followed by Newton refinement of the
   3-term continued-fraction equation g(ν) = 0. More accurate but slower.
@@ -164,8 +164,9 @@ function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
         # Half-integer branch: Im(ν) > 0 (Wolfram real-ω convention)
         Complex(0.5, +acosh(-rc) / (2π))
     else
-        # Integer branch: Im(ν) > 0 (Wolfram real-ω convention)
-        Complex(0.0, acosh(rc) / (2π))
+        # Integer branch: Im(ν) < 0 (Wolfram real-ω convention:
+        # ν = -I Im[ArcCos[rc]/(2π)], and ArcCos[rc]=i·acosh(rc) for rc>1)
+        Complex(0.0, -acosh(rc) / (2π))
     end
 
     return ν, p
