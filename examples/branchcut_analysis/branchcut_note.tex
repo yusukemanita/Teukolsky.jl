@@ -22,11 +22,11 @@
 
 \begin{document}
 \maketitle
-\tableofcontents
+% \tableofcontents
 \bigskip
 
 % ============================================================
-\section{Overview}
+% \section{Overview}
 % ============================================================
 
 The retarded Green's function of the Teukolsky equation can be decomposed
@@ -193,10 +193,9 @@ the analogue of $q$ defined in Eq.~\eqref{eq:q} for $R^{\rm up}$. $\tilde{q}$ is
     \bigl(1 - e^{2\pi(\epsilon + i\nu)}\bigr).
   \label{eq:qtilde}
 \end{equation}
-We derive this in Appendix.
-
+We derive this in Appendix. With this branch cut strength, the discontinuity of the Green's function on the positive imaginary axis evaluates to
 \begin{align}
-  \Delta G^+_{\rm PIA} &= \frac{\Delta B^{\rm ref}}{2i\omega B^{\rm inc}}=-\frac{\tilde{q}}{2\omega}
+  \Delta G^+_{\rm PIA} &= \frac{\Delta B^{\rm ref}}{2i\omega B^{\rm inc}}=-\frac{\tilde{q}}{2\omega}\,.
 \end{align}
 
 
@@ -430,7 +429,7 @@ where $A^\nu_\pm$ are the MST asymptotic amplitude sums
 
 \subsection{Connection formula for $U$ under \texorpdfstring{$2\pi$}{2pi} rotation}
 
-From DLMF \S13.2 (connection formula for Tricomi's $U$ function),
+From the DLMF~\cite{DLMF} \S13.2 (connection formula for Tricomi's $U$ function),
 a clockwise $2\pi$ rotation $z \to z\,e^{-2\pi i}$ gives
 \begin{equation}
   U(a,b,z\,e^{-2\pi i})
@@ -640,6 +639,14 @@ imaginary axis.
   ``Analytic black hole perturbation approach to gravitational radiation,''
   Living Rev.\ Rel.\ \textbf{6}, 6 (2003),
   [arXiv:gr-qc/0306120].
+
+%% NIST Digital Library of Mathematical Functions
+\bibitem{DLMF}
+  F.~W.~J.~Olver, A.~B.~Olde~Daalhuis, D.~W.~Lozier, B.~I.~Schneider,
+  R.~F.~Boisvert, C.~W.~Clark, B.~R.~Miller, B.~V.~Saunders,
+  H.~S.~Cohl and M.~A.~McClain (eds.),
+  ``NIST Digital Library of Mathematical Functions,''
+  \url{https://dlmf.nist.gov/}, Release 1.2.4 of 2025-03-15.
 
 \end{thebibliography}
 
