@@ -55,16 +55,16 @@ function compute_DG_neg(σ_grid::Vector{Float64}, a_val; use_bigfloat::Bool=true
         # Branch tracking: first point uses Monodromy; subsequent points use
         # Newton continuation from ν_prev to avoid acos branch-cut jumps.
         if ν_prev === nothing
-            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150)
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100)
         else
-            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150,
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100,
                                ν_init=ν_prev, method="Newton")
         end
         ν_cur  = q_info.ν
 
         # Use the same ν as q_info to ensure Bref/Binc are consistent with q.
         # compute_amplitudes with free ν would use a different (Monodromy) ν.
-        amp_R  = compute_amplitudes_nufixed(s, l, m, a_c, ω_R, ν_cur; nmax=150)
+        amp_R  = compute_amplitudes_nufixed(s, l, m, a_c, ω_R, ν_cur; nmax=100)
         q_val  = q_info.q
         ν_prev = ν_cur   # update branch for next step
         ΔG[i]  =  im * q_val * amp_R.Bref^2 /
@@ -76,6 +76,7 @@ end
 
 # ── helper: compute ΔG⁺(σ) on pos. imag. axis (Float64) ─────
 
+# ΔG on the positive imaginary axis via G_R - G_L (Float64, δ-offset)
 function compute_DG_pos(σ_grid::AbstractVector{Float64}, a_f64, δ_f64)
     Nσ = length(σ_grid)
     ΔG = Vector{ComplexF64}(undef, Nσ)
@@ -91,6 +92,7 @@ function compute_DG_pos(σ_grid::AbstractVector{Float64}, a_f64, δ_f64)
     end
     return ΔG
 end
+
 
 # ── helper: trapezoidal weights for log-spaced grid ──────────
 
@@ -175,9 +177,9 @@ p1 = plot(
 plot!(p1, t_all, abs.(real.(ψ_num)),
     label = "Numerical (high-prec.)", lw = 2, color = :steelblue)
 plot!(p1, t_neg, abs.(real.(ψ_BC_pos)),
-    label = L"\psi_\text{PIA}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
+    label = L"\psi_{PIA}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
 plot!(p1, t_pos, abs.(real.(ψ_BC_neg)),
-    label = L"\psi_\text{NIA}\ (t>0)", lw = 1.5, color = :darkorange, ls = :solid)
+    label = L"\psi_{NIA}\ (t>0)", lw = 1.5, color = :darkorange, ls = :solid)
 plot!(p1, t_ref, abs.(real.(ψ_QNM[idx_pos])),
     label = L"\psi_{QNM}\ (n\leq 7,\ \pm m)",
     lw = 1, color = :darkgreen, ls = :dash)
@@ -201,7 +203,7 @@ colors2  = [:navy, :royalblue, :steelblue, :seagreen, :darkorange, :crimson]
 
 fig2 = plot(
     xlabel = L"\sigma",
-    ylabel = L"|\Delta G^+_\text{NIA}(\sigma)|\,e^{-\sigma t}",
+    ylabel = L"|\Delta G^+_{NIA}(\sigma)|\,e^{-\sigma t}",
     yscale = :log10, ylim = (1e-20, 1e2),
     title  = "Integrand decay vs. \$\\sigma\$ for several \$t\$  (neg. axis)",
     framestyle = :box, grid = true, legend = :bottomright,
@@ -221,7 +223,7 @@ println("  → convergence_integrand.pdf")
 # ============================================================
 # Figure 3: convergence_sigma_max.pdf
 # ============================================================
-# Uses ψ_BC⁺ (pos. imag. axis, Float64-stable) to demonstrate
+# Uses ψ_PIA (pos. imag. axis, Float64-stable) to demonstrate
 # σ_max dependence without BigFloat overhead.
 
 println("====== Fig.3: convergence_sigma_max ======")
@@ -232,9 +234,9 @@ t_conv     = collect(range(-30.0, -0.5; length=600))
 
 fig3 = plot(
     xlabel = L"|t|/M",
-    ylabel = L"|\mathrm{Re}[\psi_{BC}^+(t)]|",
+    ylabel = L"|\mathrm{Re}[\psi_{PIA}(t)]|",
     xscale = :log10, yscale = :log10,
-    title  = "Convergence of \$\\psi_{BC}^+\$ with \$\\sigma_{\\max}\$  (pos. axis)",
+    title  = "Convergence of \$\\psi_{PIA}\$ with \$\\sigma_{\\max}\$  (pos. axis)",
     framestyle = :box, grid = true, legend = :topright,
     size = (750, 450), dpi = 150, fontfamily = "Computer Modern")
 
