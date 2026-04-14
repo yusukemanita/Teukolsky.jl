@@ -142,18 +142,30 @@ function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
     c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ; nmax=nmax_mono)
     rc   = real(c2pn)
 
+    # Branch selection based on rc = Re(cos(2πν)).
+    #
+    # For complex ω (Im(ω) ≠ 0): use "l − acos(c2pn)/(2π)" — the l-offset form.
+    # This gives Im(ν) > 0 for integer/half-integer branches, which ensures the
+    # fn 3-term recurrence converges properly.  Wolfram uses "acos(c2pn)/(2π)"
+    # (no l-offset), which gives Im(ν) < 0 for integer branch and causes the
+    # upward fn recurrence to diverge numerically.
+    #
+    # For real ω: use Wolfram's real-axis conventions:
+    #   Real branch: ν = l − arccos(rc)/(2π)
+    #   Half-integer (rc < −1): ν = 1/2 − i·acosh(−rc)/(2π)   (Im < 0)
+    #   Integer (rc > 1):       ν = i·acosh(rc)/(2π)            (Im > 0)
     ν = if imag(complex(ω)) != 0
-        # Complex ω: use full complex arccos with l-offset so ν ≈ l for small Im(ω)
+        # Complex ω: l-offset form gives Im(ν) > 0 → stable fn recurrence
         ComplexF64(l) - acos(complex(c2pn)) / (2π)
     elseif -1 ≤ rc ≤ 1
-        # Real branch: ν = l − arccos(rc)/(2π)  → ν ≈ l for ω → 0
+        # Real branch
         ComplexF64(l) - acos(complex(rc)) / (2π)
     elseif rc < -1
-        # Half-integer branch: Re(ν) = 1/2, Im(ν) = acosh(−rc)/(2π) > 0
-        Complex(0.5,  acosh(-rc) / (2π))
+        # Half-integer branch: Im(ν) < 0 (Wolfram real-ω convention)
+        Complex(0.5, -acosh(-rc) / (2π))
     else
-        # Integer branch: Re(ν) = 0, Im(ν) = acosh(rc)/(2π) > 0
-        Complex(0.0,  acosh(rc)  / (2π))
+        # Integer branch: Im(ν) > 0 (Wolfram real-ω convention)
+        Complex(0.0, acosh(rc) / (2π))
     end
 
     return ν, p

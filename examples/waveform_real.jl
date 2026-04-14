@@ -5,7 +5,7 @@ using BHPtoolkit, Plots, LaTeXStrings, Printf
 #  Waveform via real-axis frequency integral
 #
 #    ψ(u) = ∫ dω/2π  G(ω) e^{-iωu}
-#    G(ω) = Rin(r_src; ω) × Bref / (2iω Binc)
+#    G(ω) = Rin(r_src; ω) / (2iω Binc_norm)  where Binc_norm = Binc_raw / Btrans
 #
 #  u = retarded time, r_src = source location [M]
 # ============================================================
@@ -14,11 +14,11 @@ using BHPtoolkit, Plots, LaTeXStrings, Printf
 T = Float64                # precision: Float64 or BigFloat
 
 s, l, m   = -2, 2, 2
-a         = T(0.9)
+a         = T(0.0)
 r_src     = T(10.0)
 
 N         = 1000           # number of frequency points
-ω_max     = T(3.0)         # frequency cutoff [M⁻¹]
+ω_max     = T(2.0)         # frequency cutoff [M⁻¹]
 
 t_ini     = T(-100.0)      # start time [M]
 t_max     = T(600.0)       # end time [M]
@@ -29,14 +29,14 @@ Nt        = 7000           # number of time points
 ω_grid = T[(n - N÷2 + 0.5) * Δω for n in 0:N-1]
 
 # ── Compute G(ω) for positive ω, mirror to negative ─────────
-function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=200) where T
+function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=100) where T
     N  = length(ω_grid)
     GF = Vector{Complex{T}}(undef, N)
 
     ν_prev = nothing
     for i in (N÷2 + 1):N
         ω   = ω_grid[i]
-        amp = compute_amplitudes(s, l, m, a, ω; ν_init=ν_prev, nmax=nmax)
+        amp = compute_amplitudes(s, l, m, a, ω; nmax=nmax)
         ν   = amp.ν
         if !isfinite(real(ν)) || !isfinite(imag(ν))
             GF[i] = i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
@@ -44,7 +44,9 @@ function compute_GF(s, l, m, a::T, ω_grid, r_src::T; nmax=200) where T
         end
         p   = MSTParams(s, l, m, a, ω)
         val = try
-            Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Bref / (2im * ω * amp.Binc)
+            # Physical G = Rin_raw / (2iω Binc_raw) = Rin_norm × Btrans / (2iω Binc_raw)
+            # Julia's Binc is the raw amplitude; Rin() returns the transmission-normalized form.
+            Rin(p, ν, amp.fn, r_src; nmax=nmax) * amp.Btrans / (2im * ω * amp.Binc)
         catch
             i > N÷2 + 1 ? GF[i-1] : zero(Complex{T})
         end
@@ -112,7 +114,7 @@ fig_freq = plot(
     ω_arr, GF_abs;
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"|G(\omega)|",
-    label      = latexstring("G(\\omega) = R_{\\rm in}(r'=$(r_src)) B^{\\rm ref} / (2i\\omega B^{\\rm inc})"),
+    label      = latexstring("G(\\omega) = R_{\\rm in}(r'=$(r_src)) / (2i\\omega B^{\\rm inc})"),
     yscale     = :log10,
     xlim       = (-Float64(ω_max), Float64(ω_max)),
     ylim       = (1e-14, Inf),
@@ -127,5 +129,5 @@ savefig(fig_time, joinpath(outdir, "waveform_time.png"))
 savefig(fig_freq, joinpath(outdir, "waveform_freq.png"))
 println("Saved: waveform_time.png, waveform_freq.png")
 
-display(fig_time)
-display(fig_freq)
+p = plot(fig_time, fig_freq; layout=(2,1), size=(800, 700))
+display(p)
