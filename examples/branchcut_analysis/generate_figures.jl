@@ -55,14 +55,16 @@ function compute_DG_neg(σ_grid::Vector{Float64}, a_val; use_bigfloat::Bool=true
         # Branch tracking: first point uses Monodromy; subsequent points use
         # Newton continuation from ν_prev to avoid acos branch-cut jumps.
         if ν_prev === nothing
-            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100)
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150)
         else
-            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100,
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150,
                                ν_init=ν_prev, method="Newton")
         end
         ν_cur  = q_info.ν
 
-        amp_R  = compute_amplitudes(s, l,  m, a_c, ω_R; nmax=100)
+        # Use the same ν as q_info to ensure Bref/Binc are consistent with q.
+        # compute_amplitudes with free ν would use a different (Monodromy) ν.
+        amp_R  = compute_amplitudes_nufixed(s, l, m, a_c, ω_R, ν_cur; nmax=150)
         q_val  = q_info.q
         ν_prev = ν_cur   # update branch for next step
         ΔG[i]  =  im * q_val * amp_R.Bref^2 /
