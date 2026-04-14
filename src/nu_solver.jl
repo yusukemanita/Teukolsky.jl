@@ -85,26 +85,78 @@ end
 # ============================================================
 
 """
-    compute_nu(s, l, m, a, ω; nmax_cf=150, tol=-1, maxiter=200, precision=64, ν_init=nothing)
+    compute_nu(s, l, m, a, ω; nmax_cf=150, tol=-1, maxiter=200, precision=64,
+               ν_init=nothing, method="Monodromy")
 
-Solve for ν using monodromy method + Newton refinement.
+Solve for ν (renormalized angular momentum).
 
-- `tol`: convergence tolerance. Default (`tol=-1`) auto-scales: ~100·eps(R).
+# Methods
+
+- `"Monodromy"` (default): Compute cos(2πν) from the monodromy of the confluent
+  Heun equation, then extract ν directly via the branch formula. No Newton
+  refinement. Matches Wolfram Teukolsky package default behavior.
+  - Real branch   (|rc| ≤ 1):   ν = l − arccos(rc)/(2π)
+  - Half-integer  (rc < −1):    ν = 1/2 + i·acosh(−rc)/(2π)
+  - Integer       (rc > 1):     ν = i·acosh(rc)/(2π)
+
+- `"Newton"`: Monodromy initial guess followed by Newton refinement of the
+  3-term continued-fraction equation g(ν) = 0. More accurate but slower.
+
+# Other options
+
+- `tol`: convergence tolerance (Newton only). Default auto-scales: ~100·eps(R).
 - `precision`: bits of floating-point (64 = Float64, ≥128 = BigFloat).
-- `ν_init`: optional initial guess for ν (tried first, before monodromy guess).
-  Useful for branch tracking along a parameter path.
+- `ν_init`: optional initial guess (Newton only, useful for branch tracking).
 """
 function compute_nu(s::Int, l::Int, m::Int, a, ω;
                     nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
-                    precision::Int=64, ν_init=nothing)
+                    precision::Int=64, ν_init=nothing, method::String="Monodromy")
     if precision > 64
         return setprecision(BigFloat, precision) do
             compute_nu(s, l, m, BigFloat(a), Complex{BigFloat}(complex(ω));
                        nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64,
-                       ν_init=ν_init === nothing ? nothing : Complex{BigFloat}(ν_init))
+                       ν_init=ν_init === nothing ? nothing : Complex{BigFloat}(ν_init),
+                       method=method)
         end
     end
-    _compute_nu_impl(s, l, m, a, ω; nmax_cf, tol, maxiter, ν_init)
+    if method == "Monodromy"
+        return _compute_nu_monodromy(s, l, m, a, ω)
+    else
+        return _compute_nu_impl(s, l, m, a, ω; nmax_cf=nmax_cf, tol=tol,
+                                maxiter=maxiter, ν_init=ν_init)
+    end
+end
+
+"""
+    _compute_nu_monodromy(s, l, m, a, ω; nmax_mono=60)
+
+Compute ν directly from the monodromy formula (no Newton refinement).
+Matches Wolfram Teukolsky package "Monodromy" method.
+
+`nmax_mono` controls the truncation of the monodromy series (default 60,
+same as `monodromy_cos2pi_nu` default). This is independent of `nmax_cf`
+used in the continued-fraction Newton solver.
+"""
+function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
+    p    = MSTParams(s, l, m, a, ω)
+    c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ; nmax=nmax_mono)
+    rc   = real(c2pn)
+
+    ν = if imag(complex(ω)) != 0
+        # Complex ω: use full complex arccos with l-offset so ν ≈ l for small Im(ω)
+        ComplexF64(l) - acos(complex(c2pn)) / (2π)
+    elseif -1 ≤ rc ≤ 1
+        # Real branch: ν = l − arccos(rc)/(2π)  → ν ≈ l for ω → 0
+        ComplexF64(l) - acos(complex(rc)) / (2π)
+    elseif rc < -1
+        # Half-integer branch: Re(ν) = 1/2, Im(ν) = acosh(−rc)/(2π) > 0
+        Complex(0.5,  acosh(-rc) / (2π))
+    else
+        # Integer branch: Re(ν) = 0, Im(ν) = acosh(rc)/(2π) > 0
+        Complex(0.0,  acosh(rc)  / (2π))
+    end
+
+    return ν, p
 end
 
 function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;

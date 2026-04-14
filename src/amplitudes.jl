@@ -86,14 +86,17 @@ end
 # ============================================================
 
 """
-    compute_amplitudes(s, l, m, a, ω; nmax=80, nmax_cf=150)
+    compute_amplitudes(s, l, m, a, ω; nmax=80, nmax_cf=150, ν_init=nothing, method="Monodromy")
 
 Compute (B^inc, B^ref, B^trans, C^trans) using the MST formalism.
 Returns a NamedTuple with fields: Binc, Bref, Btrans, Ctrans, ν, fn, Ap, Am, Kν, Kνn
+
+`method` is passed to `compute_nu`: `"Monodromy"` (default) or `"Newton"`.
 """
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
-                            nmax::Int=80, nmax_cf::Int=150, ν_init=nothing)
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init)
+                            nmax::Int=80, nmax_cf::Int=150, ν_init=nothing,
+                            method::String="Monodromy")
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init, method=method)
 
     # εp = (ε+τ)/2 = 0 at the superradiance boundary ω = mΩH.
     # There the transmission amplitude Btrans → 0 and Binc, Bref are not well-defined.
@@ -249,8 +252,8 @@ end
 Meromorphic mode: amplitudes with branch-cut factors removed.
 """
 function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
-                                  nmax::Int=80, nmax_cf::Int=150)
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf)
+                                  nmax::Int=80, nmax_cf::Int=150, method::String="Monodromy")
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, method=method)
 
     if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes_mero: εp = 0 (ω = mΩH). Returning NaN for amplitude fields."
