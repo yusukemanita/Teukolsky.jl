@@ -68,7 +68,7 @@ end
 #
 #  Defined by (branchcut_note.tex, eq. qtilde):
 #
-#    q̃(ω) = -i (A_-^ν / A_+^ν) ω^{-2s} ε^{+2iε} e^{-iε(1−κ)} (1 − e^{2π(ε+iν)})
+#    q̃(ω) = +i (A_-^ν / A_+^ν) ω^{-2s} ε^{+2iε} e^{-iε(1−κ)} (1 − e^{2π(ε+iν)})
 #
 #  q̃ is the branch-cut strength for R^down, the analogue of q for R^up.
 #  The sign differences vs. q: Am/Ap, ω^{-2s}, ε^{+2iε}, e^{-iε(1-κ)},
@@ -82,7 +82,7 @@ Compute the branch-cut coefficient q̃(ω) for the R^down MST solution.
 
 # Formula
 
-    q̃(ω) = -i (A_-^ν / A_+^ν) ω^{-2s} ε^{+2iε} e^{-iε(1−κ)} (1 − e^{2π(ε+iν)})
+    q̃(ω) = +i (A_-^ν / A_+^ν) ω^{-2s} ε^{+2iε} e^{-iε(1−κ)} (1 − e^{2π(ε+iν)})
 
 where ε = 2Mω (M=1), κ = √(1−a²).  Compare with q (for R^up):
 
@@ -108,7 +108,7 @@ function compute_qtilde(s::Int, l::Int, m::Int, a, ω;
     phase     = exp(-im * ε * (1 - κ))    # e^{-iε(1-κ)} (sign flipped)
     monodromy = 1 - exp(2π * (ε + im*ν))  # 1 - e^{2π(ε+iν)} (ν sign flipped)
 
-    qtilde_val = -im * (Am / Ap) * ω_c^(-2s) * branch * phase * monodromy
+    qtilde_val = im * (Am / Ap) * ω_c^(-2s) * branch * phase * monodromy
 
     return (qtilde=qtilde_val, ν=ν, p=p, Ap=Ap, Am=Am)
 end

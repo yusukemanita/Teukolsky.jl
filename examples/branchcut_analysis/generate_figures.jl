@@ -76,8 +76,31 @@ end
 
 # ── helper: compute ΔG⁺(σ) on pos. imag. axis (Float64) ─────
 
-# ΔG on the positive imaginary axis via G_R - G_L (Float64, δ-offset)
-function compute_DG_pos(σ_grid::AbstractVector{Float64}, a_f64, δ_f64)
+# ΔG⁺ on the positive imaginary axis via q̃:
+#   ΔG^+_PIA(σ) = -q̃(iσ) / (2 × iσ)
+# Uses Newton continuation for smooth ν tracking.
+function compute_DG_pos(σ_grid::AbstractVector{Float64}, a_val)
+    Nσ = length(σ_grid)
+    ΔG = Vector{ComplexF64}(undef, Nσ)
+    ν_prev = nothing
+    for i in 1:Nσ
+        σ  = σ_grid[i]
+        ω  = im * σ    # positive imaginary axis
+        if ν_prev === nothing
+            qt = compute_qtilde(s, l, m, Float64(a_val), ω; nmax=100)
+        else
+            qt = compute_qtilde(s, l, m, Float64(a_val), ω; nmax=100,
+                                ν_init=ν_prev, method="Newton")
+        end
+        ν_prev = qt.ν
+        ΔG[i]  = -qt.qtilde / (2 * ω)
+        i % 20 == 0 && (print("."); flush(stdout))
+    end
+    return ΔG
+end
+
+# Legacy: G_R - G_L with δ-offset (kept for comparison)
+function compute_DG_pos_delta(σ_grid::AbstractVector{Float64}, a_f64, δ_f64)
     Nσ = length(σ_grid)
     ΔG = Vector{ComplexF64}(undef, Nσ)
     for i in 1:Nσ
@@ -120,7 +143,7 @@ println(" 完了")
 println("\n--- ΔG⁺(σ)  [pos. imag. axis, Float64] ---")
 Nσ_p  = 300
 σ_p, Δσ_p = logspaced_weights(1e-3, 10.0, Nσ_p)
-ΔG_p  = compute_DG_pos(σ_p, Float64(a), 1e-6)
+ΔG_p  = compute_DG_pos(σ_p, a)
 println(" 完了")
 
 # ── Numerical waveform ────────────────────────────────────────
@@ -249,7 +272,7 @@ for (σ_max, c) in zip(σ_max_vals, colors3)
     # recompute ΔG_p on grid up to σ_max
     Nσ_c  = max(50, round(Int, 300 * σ_max / 20.0))
     σ_c, Δσ_c = logspaced_weights(1e-3, σ_max, Nσ_c)
-    ΔG_c  = compute_DG_pos(σ_c, Float64(a), 1e-6)
+    ΔG_c  = compute_DG_pos(σ_c, a)
     ψ_c   = [-im/(2π) * sum(ΔG_c[i]*Δσ_c[i]*exp(σ_c[i]*t) for i in 1:Nσ_c)
              for t in t_conv]
     plot!(fig3, abs.(t_conv), abs.(real.(ψ_c)),
