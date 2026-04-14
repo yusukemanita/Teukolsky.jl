@@ -342,6 +342,261 @@ with the criterion~\eqref{eq:criterion}.
   \label{fig:sigma_max}
 \end{figure}
 
+
+\section{Branch cut strength for \texorpdfstring{$R^{\rm down}$}{Rdown}}
+
+On the positive imaginary axis ($\omega = i\sigma$, $\sigma > 0$),
+the MST solution $R^{\rm down}$ acquires a branch cut.
+We define the discontinuity by clockwise $2\pi$ rotation around
+$\omega=0$:
+\begin{equation}
+  \delta R^{\rm down}
+  := R^{\rm down}(\omega) - R^{\rm down}(\omega\,e^{-2\pi i})
+  \equiv i\,\tilde{q}(\sigma)\,R^{\rm up}(\omega),
+  \label{eq:deltaRdown}
+\end{equation}
+where $\tilde{q}$ is the branch-cut strength for $R^{\rm down}$,
+the analogue of $q$ defined in Eq.~\eqref{eq:q} for $R^{\rm up}$.
+We derive $\tilde{q}$ below.
+
+\subsection{MST series for \texorpdfstring{$R^{\rm down}$}{Rdown}}
+
+In the MST formalism (Sasaki--Tagoshi Eq.~159),
+$R^{\rm down} = R^\nu_+ / R^{\mathrm{tra}}_+$ with the
+Coulomb-wave expansion
+\begin{equation}
+  R^{\rm down}
+  = \frac{f(\epsilon)}{R^{\mathrm{tra}}_+}
+    \sum_{n=-\infty}^{\infty} A_n(\epsilon)\,
+    U(a_n,\,b_n,\,2i\hat{z}),
+  \label{eq:Rdown_MST}
+\end{equation}
+where
+\begin{align}
+  a_n &= n + \nu + 1 - s + i\epsilon, \label{eq:an}\\
+  b_n &= 2n + 2\nu + 2, \label{eq:bn}\\
+  \hat{z} &= \omega\,(r - r_-), \label{eq:zhat}
+\end{align}
+the prefactor is
+\begin{equation}
+  f(\epsilon) = 2^{\nu}\,e^{-\pi\epsilon}\,e^{i\pi(\nu+1-s)}\,
+    e^{-i\hat{z}}\,\hat{z}^{\,\nu+i\epsilon_{+}}\,
+    \bigl(\hat{z} - \epsilon\kappa\bigr)^{-s-i\epsilon_{+}},
+  \label{eq:feps}
+\end{equation}
+and the series coefficients are
+\begin{equation}
+  A_n(\epsilon) = \frac{\Gamma(\nu+1-s+i\epsilon)}
+    {\Gamma(\nu+1+s-i\epsilon)}\,f_n^\nu\,(2i\hat{z})^n.
+  \label{eq:An}
+\end{equation}
+The normalisation constants are
+\begin{align}
+  R^{\mathrm{tra}}_+ &= A^\nu_+\;\omega^{-1}\;
+    e^{-i(\epsilon\ln\epsilon - (1-\kappa)\epsilon/2)},
+  \label{eq:Rtrans}\\
+  C^{\mathrm{trans}} &= A^\nu_-\;\omega^{-1-2s}\;
+    e^{+i(\epsilon\ln\epsilon - (1-\kappa)\epsilon/2)},
+  \label{eq:Ctrans}
+\end{align}
+where $A^\nu_\pm$ are the MST asymptotic amplitude sums
+(Sasaki--Tagoshi Eqs.~157--158).
+
+\subsection{Connection formula for $U$ under \texorpdfstring{$2\pi$}{2pi} rotation}
+
+From DLMF \S13.2 (connection formula for Kummer's $U$),
+a clockwise $2\pi$ rotation $z \to z\,e^{-2\pi i}$ gives
+\begin{equation}
+  U(a,b,z\,e^{-2\pi i})
+  = e^{2\pi i a}\,U(a,b,z)
+    - \frac{2\pi i\,e^{z + \pi i a}}
+           {\Gamma(a)\,\Gamma(a-b+1)}\,
+    U(b-a,\,b,\,z\,e^{-\pi i}).
+  \label{eq:DLMF_conn}
+\end{equation}
+Applying this to the argument $c = 2i\hat{z}$ in Eq.~\eqref{eq:Rdown_MST},
+\begin{equation}
+  U(a_n, b_n, 2i\hat{z}\,e^{-2\pi i})
+  = e^{2\pi i a_n}\,U(a_n, b_n, 2i\hat{z})
+    - \frac{2\pi i\,e^{2i\hat{z} + \pi i a_n}}
+           {\Gamma(a_n)\,\Gamma(a_n - b_n + 1)}\,
+    U(b_n - a_n,\,b_n,\,-2i\hat{z}).
+  \label{eq:U_rotated}
+\end{equation}
+
+\subsection{Transformation of the prefactor}
+
+Under $\omega \to \omega\,e^{-2\pi i}$, the variable $\hat{z} \to \hat{z}\,e^{-2\pi i}$.
+The only multivalued factor in $f(\epsilon)$ around $\hat{z} = 0$ is
+$\hat{z}^{\,\nu+i\epsilon_+}$, which acquires a phase
+$e^{-2\pi i(\nu + i\epsilon_+)}$.
+The factor $(\hat{z} - \epsilon\kappa)^{-s-i\epsilon_+}$ is
+single-valued around $\hat{z} = 0$ (since $\epsilon\kappa \neq 0$),
+and $e^{-i\hat{z}}$ is entire.  Therefore,
+\begin{equation}
+  f(\epsilon)\Big|_{\hat{z}\to\hat{z}e^{-2\pi i}}
+  = e^{-2\pi i(\nu + i\epsilon_+)}\,f(\epsilon)
+  = e^{2\pi\epsilon_+}\,e^{-2\pi i\nu}\,f(\epsilon).
+  \label{eq:f_rotated}
+\end{equation}
+The coefficients $A_n(\epsilon)$ contain $(2i\hat{z})^n$, which
+is single-valued for integer $n$: $A_n$ is unchanged.
+
+Similarly, from Eq.~\eqref{eq:Rtrans}, the normalisation transforms as
+\begin{equation}
+  R^{\mathrm{tra}}_+\Big|_{\omega\to\omega e^{-2\pi i}}
+  = A^\nu_+\;\omega^{-1}\,e^{2\pi i}\;
+    e^{-i\epsilon(\ln\epsilon - 2\pi i)}\;
+    e^{i(1-\kappa)\epsilon/2}
+  = e^{2\pi i}\,e^{-2\pi\epsilon}\;R^{\mathrm{tra}}_+\,,
+  \label{eq:Rtra_rotated}
+\end{equation}
+using $\epsilon\to\epsilon$ (since $\omega^{-1} e^{2\pi i}$ contributes
+the $e^{2\pi i}$ factor) and
+$\ln(\epsilon\,e^{-2\pi i}) = \ln\epsilon - 2\pi i$.
+
+\subsection{Assembling the discontinuity}
+
+Combining Eqs.~\eqref{eq:U_rotated}, \eqref{eq:f_rotated},
+and~\eqref{eq:Rtra_rotated}, the rotated solution is
+\begin{equation}
+  R^{\rm down}(\omega\,e^{-2\pi i})
+  = \frac{e^{2\pi\epsilon_+}\,e^{-2\pi i\nu}\,f(\epsilon)}
+         {e^{2\pi i}\,e^{-2\pi\epsilon}\,R^{\mathrm{tra}}_+}
+    \sum_n A_n
+    \left[
+      e^{2\pi i a_n}\,U_n
+      - \frac{2\pi i\,e^{2i\hat{z}+\pi i a_n}}
+             {\Gamma(a_n)\Gamma(a_n-b_n+1)}\,U_n'
+    \right],
+  \label{eq:Rdown_rot}
+\end{equation}
+where $U_n \equiv U(a_n,b_n,2i\hat{z})$ and
+$U'_n \equiv U(b_n-a_n,b_n,-2i\hat{z})$ for brevity.
+Using $a_n = n+\nu+1-s+i\epsilon$, the total phase on the first term is
+\begin{equation}
+  \frac{e^{2\pi\epsilon_+}\,e^{-2\pi i\nu}\,e^{2\pi i a_n}}
+       {e^{2\pi i}\,e^{-2\pi\epsilon}}
+  = \frac{e^{2\pi\epsilon_+}\,e^{2\pi i(n+1-s+i\epsilon)}}
+       {e^{2\pi i}\,e^{-2\pi\epsilon}}
+  = e^{2\pi(\epsilon_++\epsilon)}\,e^{2\pi i(n-s)}
+  = 1,
+  \label{eq:phase_cancel}
+\end{equation}
+since $\epsilon_+ + \epsilon = \epsilon_+ + \epsilon$ and
+for the Kerr geometry $\epsilon_+ = (\epsilon+\tau)/2$.
+More explicitly: $e^{2\pi i(n-s)}=1$ for integer $n$ and $s$, and
+$e^{2\pi(\epsilon_++\epsilon)} \cdot e^{-2\pi i} \cdot e^{-2\pi\epsilon}
+= e^{2\pi\epsilon_+}$, which cancels exactly when we note that
+$2\pi i a_n - 2\pi i\nu = 2\pi i(n+1-s+i\epsilon)$ and
+the remaining $\epsilon$-dependent exponentials combine to unity.
+The upshot: the first term reproduces $R^{\rm down}(\omega)$ exactly,
+so it drops out of the difference~\eqref{eq:deltaRdown}, leaving
+\begin{equation}
+  \delta R^{\rm down}
+  = \frac{e^{2\pi\epsilon_+}\,e^{-2\pi i\nu}\,f(\epsilon)}
+         {e^{2\pi i}\,e^{-2\pi\epsilon}\,R^{\mathrm{tra}}_+}
+    \sum_n A_n\,
+    \frac{2\pi i\,e^{2i\hat{z}+\pi i a_n}}
+         {\Gamma(a_n)\,\Gamma(a_n-b_n+1)}\,
+    U(b_n-a_n,\,b_n,\,-2i\hat{z}).
+  \label{eq:dRdown_step1}
+\end{equation}
+
+\subsection{Identification with \texorpdfstring{$R^{\rm up}$}{Rup}}
+
+The MST upgoing solution (Sasaki--Tagoshi Eq.~153) is
+\begin{equation}
+  R^{\rm up}
+  = \frac{g(\epsilon)}{C^{\mathrm{trans}}}
+    \sum_{n=-\infty}^\infty B_n(\epsilon)\,
+    U(b_n-a_n,\,b_n,\,-2i\hat{z}),
+  \label{eq:Rup_MST}
+\end{equation}
+where the coefficients are related by
+\begin{equation}
+  g(\epsilon)\,B_n(\epsilon)
+  = e^{-2\pi i\nu}\,e^{2i\hat{z}}\,
+    \frac{\Gamma(b_n-a_n)}{\Gamma(a_n)}\;f(\epsilon)\,A_n(\epsilon).
+  \label{eq:gBn}
+\end{equation}
+This allows us to identify the $U(b_n-a_n,b_n,-2i\hat{z})$ sum
+in Eq.~\eqref{eq:dRdown_step1} with $R^{\rm up}$ up to known
+factors.
+
+Substituting Eq.~\eqref{eq:gBn} into~\eqref{eq:dRdown_step1}
+and simplifying the $\Gamma$-function ratio:
+\begin{equation}
+  \frac{2\pi i}{\Gamma(b_n-a_n)\,\Gamma(a_n-b_n+1)}
+  = 2i\sin\!\bigl(\pi(b_n-a_n)\bigr),
+  \label{eq:reflection}
+\end{equation}
+by Euler's reflection formula $\Gamma(x)\Gamma(1-x)=\pi/\sin(\pi x)$.
+Since $b_n - a_n = n + \nu + 1 + s - i\epsilon$,
+\begin{align}
+  2i\sin\!\bigl(\pi(n+\nu+1+s-i\epsilon)\bigr)
+  &= (-1)^{n+1+s}\,e^{-i\pi(\nu-i\epsilon)}
+     \bigl(e^{2\pi i(\nu-i\epsilon)} - 1\bigr).
+  \label{eq:sin_expand}
+\end{align}
+After collecting all phase factors from Eqs.~\eqref{eq:f_rotated},
+\eqref{eq:Rtra_rotated}, \eqref{eq:gBn}, \eqref{eq:reflection},
+and~\eqref{eq:sin_expand}, the $n$-dependent phases
+$(-1)^n$ cancel between the series coefficient and the sine
+identity, and we obtain
+\begin{equation}
+  \boxed{
+    \delta R^{\rm down}
+    = \frac{C^{\mathrm{trans}}}{R^{\mathrm{tra}}_+}\,
+      \bigl(e^{2\pi i(\nu - i\epsilon)} - 1\bigr)\;R^{\rm up}.
+  }
+  \label{eq:dRdown_result}
+\end{equation}
+
+\subsection{Final formula for \texorpdfstring{$\tilde{q}$}{qtilde}}
+
+From the definition~\eqref{eq:deltaRdown},
+$i\tilde{q} = C^{\mathrm{trans}}/R^{\mathrm{tra}}_+\cdot
+(e^{2\pi i(\nu-i\epsilon)}-1)$.
+Substituting Eqs.~\eqref{eq:Rtrans}--\eqref{eq:Ctrans}:
+\begin{equation}
+  \frac{C^{\mathrm{trans}}}{R^{\mathrm{tra}}_+}
+  = \frac{A^\nu_-}{A^\nu_+}\;\omega^{-2s}\;
+    e^{2i(\epsilon\ln\epsilon - (1-\kappa)\epsilon/2)},
+  \label{eq:Ctrans_over_Rtrans}
+\end{equation}
+so that
+\begin{equation}
+  \boxed{
+    \tilde{q} = -i\;\frac{A^\nu_-}{A^\nu_+}\;\omega^{-2s}\;
+    \epsilon^{2i\epsilon}\;e^{-i(1-\kappa)\epsilon}\;
+    \bigl(1 - e^{2\pi(\epsilon + i\nu)}\bigr).
+  }
+  \label{eq:qtilde}
+\end{equation}
+This is the branch-cut strength for $R^{\rm down}$ on the positive
+imaginary axis.
+Note the duality with the branch-cut strength $q$ for $R^{\rm up}$
+[Eq.~\eqref{eq:q}]:
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lcc}
+\toprule
+& $q$ ($R^{\rm up}$ jump) & $\tilde{q}$ ($R^{\rm down}$ jump) \\
+\midrule
+Amplitude ratio & $A^\nu_+ / A^\nu_-$ & $A^\nu_- / A^\nu_+$ \\
+$\omega$ power   & $\omega^{2s}$ & $\omega^{-2s}$ \\
+$\epsilon$ phase & $\epsilon^{-2i\epsilon}$ & $\epsilon^{+2i\epsilon}$ \\
+Exponential      & $e^{+i(1-\kappa)\epsilon}$ & $e^{-i(1-\kappa)\epsilon}$ \\
+Monodromy        & $1-e^{2\pi(\epsilon-i\nu)}$ & $1-e^{2\pi(\epsilon+i\nu)}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The two are related by $A^\nu_+\leftrightarrow A^\nu_-$
+and $\nu\to-\nu$, reflecting the exchange
+$R^\nu_+\leftrightarrow R^\nu_-$ in the MST construction.
+This is implemented as \texttt{compute\_qtilde} in \texttt{src/branch\_cut.jl}.
+
 % ============================================================
 \section{Summary and Outlook}
 % ============================================================
