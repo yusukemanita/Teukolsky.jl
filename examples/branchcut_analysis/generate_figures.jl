@@ -52,21 +52,20 @@ function compute_DG_neg(σ_grid::Vector{Float64}, a_val; use_bigfloat::Bool=true
     for i in 1:Nσ
         σ      = use_bigfloat ? BigFloat(σ_grid[i]) : σ_grid[i]
         ω_R    = -im*σ
-        q_info = compute_q(s, l, m, a_c, ω_R; nmax=60, ν_init=ν_prev)
+        # Branch tracking: first point uses Monodromy; subsequent points use
+        # Newton continuation from ν_prev to avoid acos branch-cut jumps.
+        if ν_prev === nothing
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100)
+        else
+            q_info = compute_q(s, l, m, a_c, ω_R; nmax=100,
+                               ν_init=ν_prev, method="Newton")
+        end
         ν_cur  = q_info.ν
 
-        # Branch-jump detection: reject if ν jumped too far from previous value
-        if ν_prev !== nothing && abs(ν_cur - ν_prev) > 0.3
-            @warn "Branch jump at σ=$(Float64(σ)): Δν=$(abs(ν_cur-ν_prev)). Retrying with tighter step."
-            # retry with previous ν as seed (no fallback)
-            q_info = compute_q(s, l, m, a_c, ω_R; nmax=150, ν_init=ν_prev)
-            ν_cur  = q_info.ν
-        end
-
-        amp_R  = compute_amplitudes(s, l,  m, a_c, ω_R; ν_init=ν_cur)
+        amp_R  = compute_amplitudes(s, l,  m, a_c, ω_R; nmax=100)
         q_val  = q_info.q
         ν_prev = ν_cur   # update branch for next step
-        ΔG[i]  = im * q_val * amp_R.Bref^2 /
+        ΔG[i]  =  im * q_val * amp_R.Bref^2 /
                 (2im * ω_R * amp_R.Binc * (amp_R.Binc + im * q_val * amp_R.Bref))
         i % 20 == 0 && (print("."); flush(stdout))
     end
@@ -174,9 +173,9 @@ p1 = plot(
 plot!(p1, t_all, abs.(real.(ψ_num)),
     label = "Numerical (high-prec.)", lw = 2, color = :steelblue)
 plot!(p1, t_neg, abs.(real.(ψ_BC_pos)),
-    label = L"\psi_{BC}^{+}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
+    label = L"\psi_\text{PIA}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
 plot!(p1, t_pos, abs.(real.(ψ_BC_neg)),
-    label = L"\psi_{BC}^{-}\ (t>0)", lw = 1.5, color = :darkorange, ls = :solid)
+    label = L"\psi_\text{NIA}\ (t>0)", lw = 1.5, color = :darkorange, ls = :solid)
 plot!(p1, t_ref, abs.(real.(ψ_QNM[idx_pos])),
     label = L"\psi_{QNM}\ (n\leq 7,\ \pm m)",
     lw = 1, color = :darkgreen, ls = :dash)
@@ -200,7 +199,7 @@ colors2  = [:navy, :royalblue, :steelblue, :seagreen, :darkorange, :crimson]
 
 fig2 = plot(
     xlabel = L"\sigma",
-    ylabel = L"|\Delta G^-(\sigma)|\,e^{-\sigma t}",
+    ylabel = L"|\Delta G^+_\text{NIA}(\sigma)|\,e^{-\sigma t}",
     yscale = :log10, ylim = (1e-20, 1e2),
     title  = "Integrand decay vs. \$\\sigma\$ for several \$t\$  (neg. axis)",
     framestyle = :box, grid = true, legend = :bottomright,
