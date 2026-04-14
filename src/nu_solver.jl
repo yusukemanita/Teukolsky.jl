@@ -161,8 +161,8 @@ function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
         # Real branch
         ComplexF64(l) - acos(complex(rc)) / (2π)
     elseif rc < -1
-        # Half-integer branch: Im(ν) < 0 (Wolfram real-ω convention)
-        Complex(0.5, -acosh(-rc) / (2π))
+        # Half-integer branch: Im(ν) > 0 (Wolfram real-ω convention)
+        Complex(0.5, +acosh(-rc) / (2π))
     else
         # Integer branch: Im(ν) > 0 (Wolfram real-ω convention)
         Complex(0.0, acosh(rc) / (2π))
