@@ -7,12 +7,64 @@
 #  Fix: reflection formula Γ(x) = π / (sin(πx) Γ(1-x)) for x < 0.
 # ============================================================
 
-function _cgamma(z::Complex{T}) where T<:AbstractFloat
-    if iszero(imag(z)) && real(z) < 0
-        x = real(z)
-        return Complex{T}(T(π) / (sin(T(π) * x) * gamma(T(1) - x)))
+"""
+    _loggamma_stirling(z)
+
+Stirling series for log Γ(z), valid for |z| >> 1:
+    log Γ(z) ≈ (z-1/2)log(z) - z + log(2π)/2 + Σ B_{2k}/[2k(2k-1) z^{2k-1}]
+
+Uses the first 10 Bernoulli terms for high precision.
+"""
+function _loggamma_stirling(z::Complex{T}) where T
+    # Bernoulli numbers B_{2k} / (2k*(2k-1))
+    coeffs = T.([
+        1//12, -1//360, 1//1260, -1//1680, 1//1188,
+        -691//360360, 1//156, -3617//122400, 43867//244188, -174611//125400
+    ])
+    s = zero(Complex{T})
+    zn = z
+    for c in coeffs
+        s += c / zn
+        zn *= z * z
     end
-    return gamma(z)
+    return (z - T(1)/2) * log(z) - z + log(T(2) * T(π)) / 2 + s
+end
+
+"""
+    _cgamma(z::Complex{T})
+
+BigFloat-safe complex Gamma function.
+Uses recurrence to shift Re(z) ≥ 10, then Stirling series.
+Falls back to SpecialFunctions.gamma for Float64/Float32.
+"""
+function _cgamma(z::Complex{T}) where T<:AbstractFloat
+    # For Float64, try SpecialFunctions first
+    if T === Float64 || T === Float32
+        if iszero(imag(z)) && real(z) < 0
+            x = real(z)
+            return Complex{T}(T(π) / (sin(T(π) * x) * gamma(T(1) - x)))
+        end
+        return gamma(z)
+    end
+
+    # BigFloat path: recurrence + Stirling
+    # Reflection formula for Re(z) < 0
+    if real(z) < 0
+        # Γ(z) = π / (sin(πz) Γ(1-z))
+        return T(π) / (sin(T(π) * z) * _cgamma(one(Complex{T}) - z))
+    end
+
+    # Recurrence Γ(z) = Γ(z+n) / (z(z+1)...(z+n-1)) to shift Re(z) ≥ 10
+    shift = max(0, ceil(Int, 10 - real(z)))
+    z_shifted = z + shift
+    log_gamma = _loggamma_stirling(z_shifted)
+    result = exp(log_gamma)
+
+    # Undo the shift: Γ(z) = Γ(z+n) / Π_{k=0}^{n-1} (z+k)
+    for k in (shift-1):-1:0
+        result /= (z + k)
+    end
+    return result
 end
 _cgamma(z) = gamma(z)
 
