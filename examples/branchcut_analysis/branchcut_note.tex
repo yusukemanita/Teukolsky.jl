@@ -281,6 +281,7 @@ Key observations:
 \end{figure}
 
 \subsection{The convergence criterion}
+\label{sec:criterion}
 
 The branch cut integral in Eq.~\eqref{eq:BC_neg} is a Laplace transform
 of $\Delta G^+_{\rm NIA}(\sigma)$.
@@ -344,7 +345,97 @@ with the criterion~\eqref{eq:criterion}.
   \label{fig:sigma_max}
 \end{figure}
 
+\subsection{Residual analysis}
 
+Figure~\ref{fig:residual} shows the residuals of the waveform decomposition
+on both time-sides.
+For $t > 0$ the residual is defined as
+\begin{equation}
+  \delta\psi^+(t) \;=\; \psi_{\rm num}(t) - \psi_{\rm QNM}(t) - \psi_{\rm NIA}(t),
+\end{equation}
+where $\psi_{\rm QNM}$ is the sum over 16 QNMs (8 prograde + 8 retrograde,
+$n = 0\text{--}7$) and $\psi_{\rm NIA}$ is the numerical branch-cut
+integral~\eqref{eq:NIA_integral} with $\sigma \in [10^{-3},\,5]$,
+$N_\sigma = 500$.
+For $t < 0$ the residual is
+\begin{equation}
+  \delta\psi^-(t) \;=\; \psi_{\rm num}(t) - \psi_{\rm PIA}(t),
+\end{equation}
+where $\psi_{\rm PIA}$ is the positive-imaginary-axis branch-cut integral
+with $\sigma \in [10^{-3},\,10]$, $N_\sigma = 300$.
+
+For $t > 0$, the residual starts near $10^{-4}$ at $t \approx 10\,M$ (due
+to the finite QNM sum and early-time junk from $t \sim 0$) and drops to
+$\lesssim 10^{-12}$ by $t \approx 50\,M$, where it is limited by the
+$\sigma_{\rm max} = 5$ truncation rather than floating-point arithmetic.
+At very late times ($t \gtrsim 200\,M$) the residual approaches the
+machine-epsilon floor $\sim 2 \times 10^{-16}$ of the CSV reference data.
+
+For $t < 0$, the residual is $\lesssim 10^{-10}$ for $|t| \gtrsim 10\,M$,
+confirming that $\psi_{\rm PIA}$ captures the pre-ringdown signal to high
+accuracy.  The slight upturn near $t = 0$ reflects the slow convergence
+discussed in Section~\ref{sec:criterion}.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{residual_analysis.pdf}
+  \caption{Residuals of the waveform decomposition.
+    \emph{Top:} $|\mathrm{Re}[\psi_{\rm num} - \psi_{\rm QNM} - \psi_{\rm NIA}]|$
+    for $t > 0$, showing the full waveform $|\mathrm{Re}[\psi_{\rm num}]|$ (blue)
+    and the combined QNM+NIA fit (dashed green) alongside the residual (red).
+    \emph{Bottom:} $|\mathrm{Re}[\psi_{\rm num} - \psi_{\rm PIA}]|$ for $t < 0$.
+    Both panels use $a/M = 0.9$, $(s,\ell,m) = (-2,2,2)$.}
+  \label{fig:residual}
+\end{figure}
+
+\subsection{Numerical precision of the branch-cut integral}
+
+A natural question is whether the residual floor seen in
+Figure~\ref{fig:residual} can be reduced by using higher-precision
+arithmetic for the $\Delta G^-(\sigma)$ computation.
+Figure~\ref{fig:precision} compares $\psi_{\rm NIA}$ computed from
+$\Delta G^-$ evaluated in \texttt{Float64} versus \texttt{BigFloat(256)}
+($\approx 77$ decimal digits).
+
+Although the $\Delta G^-$ values themselves differ by up to $74\%$ at
+large $\sigma$ between the two precisions
+($\max|\Delta G_{\rm f64} - \Delta G_{\rm bf}|/|\Delta G_{\rm bf}| \approx 0.74$),
+the resulting $\psi_{\rm NIA}(t)$ is virtually identical:
+
+\begin{center}
+\begin{tabular}{ccc}
+\hline
+$t/M$ & $|\delta\psi_{\rm F64}|$ & $|\delta\psi_{\rm BF}|$ \\
+\hline
+$10$  & $4.3 \times 10^{-4}$  & $4.3 \times 10^{-4}$  \\
+$30$  & $1.1 \times 10^{-11}$ & $1.1 \times 10^{-11}$ \\
+$100$ & $4.9 \times 10^{-14}$ & $4.9 \times 10^{-14}$ \\
+$200$ & $2.2 \times 10^{-15}$ & $2.2 \times 10^{-15}$ \\
+$400$ & $4.0 \times 10^{-16}$ & $4.0 \times 10^{-16}$ \\
+\hline
+\end{tabular}
+\end{center}
+
+The explanation is straightforward: the large-$\sigma$ part of
+$\Delta G^-(\sigma)$ where the two precisions disagree most is
+exponentially suppressed by $e^{-\sigma t}$ in the integral.
+The $\Delta G^-$ values at $\sigma \gtrsim 3$ contribute essentially
+zero weight for $t \gtrsim 10\,M$.
+The residual floor therefore tracks the \texttt{Float64} machine
+epsilon $\approx 2.2 \times 10^{-16}$ of the reference CSV waveform,
+not the arithmetic precision of the $\Delta G^-$ computation.
+\texttt{Float64} is entirely sufficient.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{residual_precision_check.pdf}
+  \caption{Residual $|\mathrm{Re}[\psi_{\rm num} - \psi_{\rm QNM} - \psi_{\rm NIA}]|$
+    computed with \texttt{Float64} (red) and \texttt{BigFloat(256)} (green dashed).
+    The two curves are indistinguishable, confirming that the residual floor
+    is limited by the \texttt{Float64} precision of the reference waveform data,
+    not by the arithmetic precision of the branch-cut integration.}
+  \label{fig:precision}
+\end{figure}
 
 
 % ============================================================
@@ -360,10 +451,15 @@ with the criterion~\eqref{eq:criterion}.
         branch cut gives the $t^{-5}$ power-law tail at late times.
         The residual $\psi_{\mathrm{num}} - \psiQNM$ matches $\psi_{\mathrm{BC}}^-$,
         confirming the completeness of the decomposition.
-        256-bit \texttt{BigFloat} is required for the direct two-sided
-        evaluation~\eqref{eq:DG_neg} at $\sigma \gtrsim 3$, but the
-        alternative formula~\eqref{eq:DGneg_q} via $q(\omega)$ is
+        The alternative formula~\eqref{eq:DGneg_q} via $q(\omega)$ is
         stable in \texttt{Float64} across the full $\sigma$ range.
+  \item The residual of the decomposition
+        $\psi_{\rm num} - \psi_{\rm QNM} - \psi_{\rm NIA}$ drops to
+        $\lesssim 10^{-12}$ by $t \approx 50\,M$ and approaches the
+        machine-epsilon floor $\sim 2 \times 10^{-16}$ at late times.
+        Higher-precision arithmetic (\texttt{BigFloat(256)}) does not
+        improve the residual; the floor is set by the \texttt{Float64}
+        precision of the reference waveform.
   \item Near $t = 0$, both branch cut integrals converge slowly because the
         damping factor $e^{-\sigma t}$ is near unity for all $\sigma$.
         A practical rule is $\sigma_{\max} \gtrsim 10/|t_{\min}|$.
