@@ -169,3 +169,6 @@ using BHPtoolkit
     end
 
 end
+
+# Quantitative cross-check against the Wolfram Teukolsky package.
+include("test_wolfram_grid.jl")
