@@ -185,6 +185,22 @@ using BHPtoolkit
         @test compute_fn(p, ν; nmax=160) isa Dict
     end
 
+    @testset "A6 waveform precision" begin
+        # Float64 waveform runs and ψ is real (G(-ω)=conj G(ω)) to rounding.
+        wp = WaveformParams(s=-2, l=2, m=2, a=0.0, N=20, ω_max=2.0, Nt=4, verbose=false)
+        _, ψ, _, _ = compute_waveform(wp)
+        @test eltype(ψ) == ComplexF64
+        @test all(isfinite, ψ)
+        @test maximum(abs, imag.(ψ)) ≤ 1e-9 * maximum(abs, real.(ψ)) + 1e-30
+
+        # BigFloat: the parametric type flows through to a Complex{BigFloat} waveform.
+        wpb = WaveformParams(s=-2, l=2, m=2, a=big"0.0", N=8, ω_max=big"2.0", Nt=2, verbose=false)
+        @test wpb isa WaveformParams{BigFloat}
+        _, ψb, _, _ = setprecision(() -> compute_waveform(wpb), BigFloat, 128)
+        @test eltype(ψb) == Complex{BigFloat}
+        @test all(isfinite, ψb)
+    end
+
 end
 
 # Quantitative cross-check against the Wolfram Teukolsky package.

@@ -36,17 +36,17 @@ Parameters for waveform computation.
                (default: 0.1).  Eliminates Gibbs pre-cursor and late-time noise floor.
 - `verbose`: print progress (default: true)
 """
-struct WaveformParams
+struct WaveformParams{R<:Real}
     s::Int
     l::Int
     m::Int
-    a::Float64
+    a::R
     N::Int
-    ω_max::Float64
-    t_ini::Float64
-    t_max::Float64
+    ω_max::R
+    t_ini::R
+    t_max::R
     Nt::Int
-    taper_frac::Float64
+    taper_frac::R
     verbose::Bool
 end
 
@@ -59,8 +59,11 @@ function WaveformParams(;
     # Even N is required so the half-integer grid is symmetric about ω=0
     # (ω_grid[i] = -ω_grid[N+1-i]); the G(-ω)=conj G(ω) mirror is wrong otherwise.
     iseven(N) || (N += 1)
-    WaveformParams(s, l, m, Float64(a), N, Float64(ω_max),
-                   Float64(t_ini), Float64(t_max), Nt, Float64(taper_frac), verbose)
+    # Common real type — pass a BigFloat `a` (and/or ω_max …) for a BigFloat waveform.
+    R = promote_type(typeof(float(a)), typeof(float(ω_max)), typeof(float(t_ini)),
+                     typeof(float(t_max)), typeof(float(taper_frac)))
+    WaveformParams{R}(s, l, m, R(a), N, R(ω_max),
+                      R(t_ini), R(t_max), Nt, R(taper_frac), verbose)
 end
 
 # ============================================================
@@ -76,9 +79,9 @@ Gibbs pre-cursor and late-time noise floor that arise from
 abrupt frequency truncation.
 """
 @inline function planck_taper(x::Real)
-    x ≤ 0.0 && return 1.0
-    x ≥ 1.0 && return 0.0
-    return 1 / (exp(1/x - 1/(1-x)) + 1)
+    x ≤ 0 && return one(x)
+    x ≥ 1 && return zero(x)
+    return one(x) / (exp(one(x)/x - one(x)/(1-x)) + 1)
 end
 
 """
@@ -88,7 +91,7 @@ Window weight for frequency ω: 1 for |ω| ≤ (1-frac)*ω_max,
 then Planck-taper to 0 at |ω| = ω_max.
 """
 @inline function taper_weight(ω::Real, ω_max::Real, frac::Real)
-    frac ≤ 0.0 && return 1.0
+    frac ≤ 0 && return one(float(ω))
     x = (abs(ω) / ω_max - (1 - frac)) / frac   # 0 at inner edge, 1 at ω_max
     return planck_taper(x)
 end
@@ -97,8 +100,14 @@ end
 #  Green's function
 # ============================================================
 
+# G(ω) at a positive frequency — the single source of the Green-function formula.
+function _green_pos(p::WaveformParams, ω_pos)
+    amp = compute_amplitudes(p.s, p.l, p.m, p.a, ω_pos)
+    return amp.Bref / (2im * ω_pos * amp.Binc)
+end
+
 """
-    green_function(p::WaveformParams, ω) -> ComplexF64
+    green_function(p::WaveformParams, ω)
 
 Evaluate G(ω) = B^ref / (2iω B^inc).
 
@@ -108,10 +117,7 @@ appropriate convention for the gravitational-wave signal at a fixed
 sky position (combining m and -m contributions).
 """
 function green_function(p::WaveformParams, ω)
-    s, l, m, a = p.s, p.l, p.m, p.a
-    ω_pos = abs(real(ω))
-    amp   = compute_amplitudes(s, l, m, a, ω_pos)
-    G_pos = amp.Bref / (2im * ω_pos * amp.Binc)
+    G_pos = _green_pos(p, abs(real(ω)))
     return real(ω) >= 0 ? G_pos : conj(G_pos)
 end
 
@@ -130,9 +136,9 @@ Returns:
 - `GF`: Green's function values on ω_grid (length N)
 - `ω_grid`: half-integer frequency grid (length N)
 """
-function compute_waveform(p::WaveformParams)
-    s, l, m, a = p.s, p.l, p.m, p.a
-    N, ω_max   = p.N, p.ω_max
+function compute_waveform(p::WaveformParams{R}) where {R}
+    N, ω_max = p.N, p.ω_max
+    CR = Complex{R}
     # The lower-half mirror GF[i]=conj(GF[N+1-i]) below assumes ω_grid[i]=-ω_grid[N+1-i],
     # which holds only for even N (odd N offsets the pair by Δω → silently wrong waveform).
     iseven(N) || throw(ArgumentError(
@@ -140,7 +146,7 @@ function compute_waveform(p::WaveformParams)
     Δω = 2ω_max / N
 
     # Half-integer grid: ω_n = (n - N/2 + 1/2)Δω, avoids ω = 0
-    ω_grid = [(n - N÷2 + 0.5) * Δω for n in 0:N-1]
+    ω_grid = R[(n - N÷2 + one(R)/2) * Δω for n in 0:N-1]
     t_grid = range(p.t_ini, p.t_max; length=p.Nt)
 
     # ── Step 1: evaluate G(ω) on frequency grid ─────────────
@@ -149,15 +155,22 @@ function compute_waveform(p::WaveformParams)
     # Evaluate G only at positive frequencies; negative half uses G(-ω) = conj(G(ω)).
     # The half-integer grid satisfies ω_grid[i] = -ω_grid[N+1-i], so we compute
     # the upper half (i = N÷2+1 : N) and mirror into the lower half.
-    GF = Vector{ComplexF64}(undef, N)
+    GF = Vector{CR}(undef, N)
+    warned = false
     for i in (N÷2 + 1):N
         ω = ω_grid[i]
         w = taper_weight(ω, ω_max, p.taper_frac)
         if iszero(w)
-            GF[i] = zero(ComplexF64)
+            GF[i] = zero(CR)
         else
-            amp    = compute_amplitudes(s, l, m, a, ω)
-            GF[i]  = amp.Bref / (2im * ω * amp.Binc) * w
+            GF[i] = _green_pos(p, ω) * w
+            # Superradiant point ω = mΩ_H gives NaN amplitudes (εp=0); a single
+            # NaN would poison every ψ[k]. Drop it (removable measure-zero point).
+            if !isfinite(GF[i])
+                GF[i] = zero(CR)
+                warned || (@warn "compute_waveform: non-finite G at ω≈$(Float64(ω)) " *
+                                 "(superradiant point ω=mΩ_H?); zeroed."; warned = true)
+            end
         end
         p.verbose && i % 200 == 0 && (print("."); flush(stdout))
     end
@@ -169,11 +182,11 @@ function compute_waveform(p::WaveformParams)
     # ── Step 2: direct integration over time ─────────────────
     p.verbose && (println("Integrating for $(p.Nt) time points ..."); flush(stdout))
 
-    ψ      = Vector{ComplexF64}(undef, p.Nt)
-    prefac = Δω / (2π)
+    ψ      = Vector{CR}(undef, p.Nt)
+    prefac = Δω / (2 * R(π))
 
     for (k, t) in enumerate(t_grid)
-        s_val = zero(ComplexF64)
+        s_val = zero(CR)
         @inbounds for n in 1:N
             s_val += GF[n] * exp(-im * ω_grid[n] * t)
         end
