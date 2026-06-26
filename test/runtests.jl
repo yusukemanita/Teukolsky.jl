@@ -189,3 +189,6 @@ end
 
 # Quantitative cross-check against the Wolfram Teukolsky package.
 include("test_wolfram_grid.jl")
+
+# Forward-looking BigFloat precision gate for the Track-A refactor.
+include("test_precision_bigfloat.jl")
