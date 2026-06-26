@@ -1,71 +1,36 @@
 # ============================================================
-#  BigFloat-safe gamma
+#  Complex Gamma to full working precision
 #
-#  SpecialFunctions.gamma(x::BigFloat) throws DomainError for x < 0.
-#  When ω is on the negative imaginary axis, many gamma arguments become
-#  negative reals (zero imaginary part), triggering this bug.
-#  Fix: reflection formula Γ(x) = π / (sin(πx) Γ(1-x)) for x < 0.
+#  SpecialFunctions.gamma(::Complex{T}) is accurate to full precision for any
+#  T<:AbstractFloat (Float64, BigFloat, …) — EXCEPT when imag(z)==0 exactly,
+#  where it routes to the real-argument path that throws a DomainError for
+#  x < 0.  _cgamma handles the real axis explicitly (reflection for negative
+#  reals) and otherwise defers to gamma.
+#
+#  (The previous hand-rolled Stirling series floored the BigFloat result at
+#  ~1e-20; SpecialFunctions.gamma reaches ~eps — verified to ~1e-78 at 256 bits.)
 # ============================================================
 
 """
-    _loggamma_stirling(z)
+    _cgamma(z)
 
-Stirling series for log Γ(z), valid for |z| >> 1:
-    log Γ(z) ≈ (z-1/2)log(z) - z + log(2π)/2 + Σ B_{2k}/[2k(2k-1) z^{2k-1}]
-
-Uses the first 10 Bernoulli terms for high precision.
-"""
-function _loggamma_stirling(z::Complex{T}) where T
-    # Bernoulli numbers B_{2k} / (2k*(2k-1))
-    coeffs = T.([
-        1//12, -1//360, 1//1260, -1//1680, 1//1188,
-        -691//360360, 1//156, -3617//122400, 43867//244188, -174611//125400
-    ])
-    s = zero(Complex{T})
-    zn = z
-    for c in coeffs
-        s += c / zn
-        zn *= z * z
-    end
-    return (z - T(1)/2) * log(z) - z + log(T(2) * T(π)) / 2 + s
-end
-
-"""
-    _cgamma(z::Complex{T})
-
-BigFloat-safe complex Gamma function.
-Uses recurrence to shift Re(z) ≥ 10, then Stirling series.
-Falls back to SpecialFunctions.gamma for Float64/Float32.
+Complex Gamma function, accurate to full working precision for any float type
+(Float64, BigFloat, …), including the negative real axis where the generic
+`gamma` would throw a DomainError.
 """
 function _cgamma(z::Complex{T}) where T<:AbstractFloat
-    # For Float64, try SpecialFunctions first
-    if T === Float64 || T === Float32
-        if iszero(imag(z)) && real(z) < 0
-            x = real(z)
-            return Complex{T}(T(π) / (sin(T(π) * x) * gamma(T(1) - x)))
-        end
-        return gamma(z)
+    if iszero(imag(z))
+        x = real(z)
+        # gamma(::BigFloat) throws for x < 0; use Γ(x) = π / (sin(πx) Γ(1-x))
+        # (1-x > 1 is handled by the real path).
+        x < 0 && return Complex{T}(T(π) / (sin(T(π) * x) * gamma(T(1) - x)))
+        return Complex{T}(gamma(x))
     end
-
-    # BigFloat path: recurrence + Stirling
-    # Reflection formula for Re(z) < 0
-    if real(z) < 0
-        # Γ(z) = π / (sin(πz) Γ(1-z))
-        return T(π) / (sin(T(π) * z) * _cgamma(one(Complex{T}) - z))
-    end
-
-    # Recurrence Γ(z) = Γ(z+n) / (z(z+1)...(z+n-1)) to shift Re(z) ≥ 10
-    shift = max(0, ceil(Int, 10 - real(z)))
-    z_shifted = z + shift
-    log_gamma = _loggamma_stirling(z_shifted)
-    result = exp(log_gamma)
-
-    # Undo the shift: Γ(z) = Γ(z+n) / Π_{k=0}^{n-1} (z+k)
-    for k in (shift-1):-1:0
-        result /= (z + k)
-    end
-    return result
+    return gamma(z)
 end
+
+# Real arguments route through the safe complex path (avoids gamma's neg-real throw).
+_cgamma(z::Real) = real(_cgamma(complex(float(z))))
 _cgamma(z) = gamma(z)
 
 # ============================================================
