@@ -168,6 +168,23 @@ using BHPtoolkit
         @test abs(drup_num - drup_ana) / abs(drup_ana) < 1e-6
     end
 
+    @testset "A0 bug-fix regressions" begin
+        # H7: even N enforced for the G(-ω)=conj G(ω) waveform grid mirror
+        wp = WaveformParams(s=-2, l=2, m=2, a=0.0, N=99, Nt=4, verbose=false)
+        @test iseven(wp.N)                       # constructor rounds odd N up (99→100)
+        wp_odd = BHPtoolkit.Waveform.WaveformParams(
+            -2, 2, 2, 0.0, 99, 6.0, -10.0, 10.0, 4, 0.1, false)
+        @test_throws ArgumentError compute_waveform(wp_odd)
+
+        # M3: f_n continued-fraction window guard — out-of-window index errors
+        # instead of silently returning 0.
+        ν, p = compute_nu(-2, 2, 2, 0.0, 0.3)
+        @test_throws ArgumentError BHPtoolkit.Rn_cf(p, ν, 200; nmax=150)
+        @test_throws ArgumentError BHPtoolkit.Ln_cf(p, ν, -200; nmax=150)
+        # compute_fn auto-sizes the window so a large nmax never hits the guard.
+        @test compute_fn(p, ν; nmax=160) isa Dict
+    end
+
 end
 
 # Quantitative cross-check against the Wolfram Teukolsky package.

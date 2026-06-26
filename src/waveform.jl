@@ -56,6 +56,9 @@ function WaveformParams(;
     t_ini::Real=-100.0, t_max::Real=600.0, Nt::Int=3000,
     taper_frac::Real=0.1, verbose::Bool=true)
 
+    # Even N is required so the half-integer grid is symmetric about ω=0
+    # (ω_grid[i] = -ω_grid[N+1-i]); the G(-ω)=conj G(ω) mirror is wrong otherwise.
+    iseven(N) || (N += 1)
     WaveformParams(s, l, m, Float64(a), N, Float64(ω_max),
                    Float64(t_ini), Float64(t_max), Nt, Float64(taper_frac), verbose)
 end
@@ -130,6 +133,10 @@ Returns:
 function compute_waveform(p::WaveformParams)
     s, l, m, a = p.s, p.l, p.m, p.a
     N, ω_max   = p.N, p.ω_max
+    # The lower-half mirror GF[i]=conj(GF[N+1-i]) below assumes ω_grid[i]=-ω_grid[N+1-i],
+    # which holds only for even N (odd N offsets the pair by Δω → silently wrong waveform).
+    iseven(N) || throw(ArgumentError(
+        "compute_waveform: N must be even (got N=$N) for the G(-ω)=conj G(ω) grid mirror"))
     Δω = 2ω_max / N
 
     # Half-integer grid: ω_n = (n - N/2 + 1/2)Δω, avoids ω = 0

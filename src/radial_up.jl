@@ -51,21 +51,25 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
 
     # HU cache with recurrence + fallback
     hu_cache = Dict{Int, ComplexF64}()
+    # Check if asymptotic expansion converges well for n=0.
+    # If so, bypass the (potentially unstable) recurrence for all n.
+    _asymp_acc = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
+    use_exact_all = _asymp_acc < 1e-6
 
     function get_hu(n::Int)
         haskey(hu_cache, n) && return hu_cache[n]
-        if n == 0 || n == 1
+        if use_exact_all || n == 0 || n == 1
             val = hu_exact(hp, n)
         elseif n >= 2
             t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         else
             t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         end
@@ -165,21 +169,23 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
     # HU and dHU caches
     hu_cache = Dict{Int, ComplexF64}()
     dhu_cache = Dict{Int, ComplexF64}()
+    _asymp_acc2 = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
+    use_exact_all2 = _asymp_acc2 < 1e-6
 
     function get_hu(n::Int)
         haskey(hu_cache, n) && return hu_cache[n]
-        if n == 0 || n == 1
+        if use_exact_all2 || n == 0 || n == 1
             val = hu_exact(hp, n)
         elseif n >= 2
             t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         else
             t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         end
@@ -189,18 +195,18 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
 
     function get_dhu(n::Int)
         haskey(dhu_cache, n) && return dhu_cache[n]
-        if n == 0 || n == 1
+        if use_exact_all2 || n == 0 || n == 1
             val = dhu_exact(hp, n)
         elseif n >= 2
             t1, t2, t3 = dhu_up(hp, n, get_dhu(n-2), get_dhu(n-1), get_hu(n-1))
             val = t1 + t2 + t3
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
                 val = dhu_exact(hp, n)
             end
         else
             t1, t2, t3 = dhu_down(hp, n, get_dhu(n+2), get_dhu(n+1), get_hu(n+1))
             val = t1 + t2 + t3
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
                 val = dhu_exact(hp, n)
             end
         end

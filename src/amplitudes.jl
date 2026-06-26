@@ -159,7 +159,10 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
                                      ν_fixed; nmax::Int=80)
     p = MSTParams(s, l, m, a, ω)
     R = typeof(p.a)
-    δ = R(1e-10)
+    # Step off exact integer/half-integer ν (removable Γ-pole). δ=√eps balances
+    # the O(δ) bias against the O(eps/δ) near-pole cancellation and, crucially,
+    # scales with precision (the old fixed 1e-10 capped BigFloat results at 1e-10).
+    δ = sqrt(eps(R))
     ν = Complex{R}(ν_fixed + δ)
 
     if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
@@ -305,7 +308,10 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
                                           ν_fixed; nmax::Int=80)
     p = MSTParams(s, l, m, a, ω)
     R = typeof(p.a)
-    δ = R(1e-10)
+    # Step off exact integer/half-integer ν (removable Γ-pole). δ=√eps balances
+    # the O(δ) bias against the O(eps/δ) near-pole cancellation and, crucially,
+    # scales with precision (the old fixed 1e-10 capped BigFloat results at 1e-10).
+    δ = sqrt(eps(R))
     ν = Complex{R}(ν_fixed + δ)
 
     if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))

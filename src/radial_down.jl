@@ -56,13 +56,13 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         elseif n >= 2
             t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         else
             t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
             val = t1 + t2
-            if abs(val) > 0 && max(abs(t1/val), abs(t2/val)) > 2.0
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = hu_exact(hp, n)
             end
         end

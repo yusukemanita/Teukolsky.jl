@@ -33,6 +33,9 @@ end
 Compute R_n = f_n/f_{n-1} via continued fraction going to +∞.
 """
 function Rn_cf(p::MSTParams, ν, n; nmax=150)
+    n > nmax && throw(ArgumentError(
+        "Rn_cf: index n=$n exceeds CF window nmax=$nmax (would silently return 0); " *
+        "raise nmax_cf"))
     R = zero(p.ϵ)
     for k in nmax:-1:n
         α_k = αn(p, ν, k)
@@ -49,6 +52,9 @@ end
 Compute L_n = f_n/f_{n+1} via continued fraction going to -∞.
 """
 function Ln_cf(p::MSTParams, ν, n; nmax=150)
+    n < -nmax && throw(ArgumentError(
+        "Ln_cf: index n=$n below CF window -nmax=$(-nmax) (would silently return 0); " *
+        "raise nmax_cf"))
     L = zero(p.ϵ)
     for k in -nmax:n
         α_k = αn(p, ν, k)
@@ -69,18 +75,18 @@ end
 Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax.
 Normalized so that f_0 = 1.
 """
-function compute_fn(p::MSTParams, ν; nmax::Int=80)
+function compute_fn(p::MSTParams, ν; nmax::Int=80, nmax_cf::Int=max(150, nmax + 50))
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
     f[0] = one(T)
 
     for n in 1:nmax
-        R = Rn_cf(p, ν, n)
+        R = Rn_cf(p, ν, n; nmax=nmax_cf)
         f[n] = R * f[n-1]
     end
 
     for n in -1:-1:-nmax
-        L = Ln_cf(p, ν, n)
+        L = Ln_cf(p, ν, n; nmax=nmax_cf)
         f[n] = L * f[n+1]
     end
 
@@ -92,7 +98,8 @@ end
 
 Like `compute_fn` but with f_n = 0 for n < nmin.
 """
-function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80)
+function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80,
+                              nmax_cf::Int=max(150, nmax + 50))
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
 
@@ -104,12 +111,12 @@ function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80)
     f[n0] = one(T)
 
     for n in n0+1:nmax
-        R = Rn_cf(p, ν, n)
+        R = Rn_cf(p, ν, n; nmax=nmax_cf)
         f[n] = R * f[n-1]
     end
 
     for n in n0-1:-1:nmin
-        L = Ln_cf(p, ν, n)
+        L = Ln_cf(p, ν, n; nmax=nmax_cf)
         f[n] = L * f[n+1]
     end
 
