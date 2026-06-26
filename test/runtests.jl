@@ -176,12 +176,12 @@ using BHPtoolkit
             -2, 2, 2, 0.0, 99, 6.0, -10.0, 10.0, 4, 0.1, false)
         @test_throws ArgumentError compute_waveform(wp_odd)
 
-        # M3: f_n continued-fraction window guard — out-of-window index errors
-        # instead of silently returning 0.
+        # M3 / A3: f_n continued fractions now use convergence-checked Lentz
+        # iteration (no fixed window / silent-zero). Any index converges to a
+        # finite, nonzero ratio.
         ν, p = compute_nu(-2, 2, 2, 0.0, 0.3)
-        @test_throws ArgumentError BHPtoolkit.Rn_cf(p, ν, 200; nmax=150)
-        @test_throws ArgumentError BHPtoolkit.Ln_cf(p, ν, -200; nmax=150)
-        # compute_fn auto-sizes the window so a large nmax never hits the guard.
+        @test isfinite(BHPtoolkit.Rn_cf(p, ν, 200)) && !iszero(BHPtoolkit.Rn_cf(p, ν, 200))
+        @test isfinite(BHPtoolkit.Ln_cf(p, ν, -200))
         @test compute_fn(p, ν; nmax=160) isa Dict
     end
 

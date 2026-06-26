@@ -25,43 +25,67 @@ end
 
 # ============================================================
 #  Continued fractions for R_n and L_n, Eqs. (127)-(128)
+#
+#  Evaluated by the modified Lentz algorithm with a convergence check (instead
+#  of a fixed backward-recurrence window): self-sizing and accurate to the
+#  working precision, with a warning if the iteration cap is hit.
 # ============================================================
 
 """
-    Rn_cf(p, ν, n; nmax=150)
+    _lentz_cf(a, b, T; tol, maxiter)
 
-Compute R_n = f_n/f_{n-1} via continued fraction going to +∞.
+Modified Lentz evaluation (Numerical Recipes §5.2) of the continued fraction
+
+    a(1) / (b(1) + a(2) / (b(2) + a(3) / (b(3) + ⋯)))
+
+iterating until the update factor is within `tol` of 1. Returns `(value, converged)`.
 """
-function Rn_cf(p::MSTParams, ν, n; nmax=150)
-    n > nmax && throw(ArgumentError(
-        "Rn_cf: index n=$n exceeds CF window nmax=$nmax (would silently return 0); " *
-        "raise nmax_cf"))
-    R = zero(p.ϵ)
-    for k in nmax:-1:n
-        α_k = αn(p, ν, k)
-        β_k = βn(p, ν, k)
-        γ_k = γn(p, ν, k)
-        R = -γ_k / (β_k + α_k * R)
+function _lentz_cf(a, b, ::Type{T}; tol, maxiter::Int) where {T<:Complex}
+    tiny = T(eps(real(T))^2)
+    f = tiny
+    C = f
+    D = zero(T)
+    for j in 1:maxiter
+        aj = a(j); bj = b(j)
+        D = bj + aj * D; iszero(D) && (D = tiny); D = inv(D)
+        C = bj + aj / C; iszero(C) && (C = tiny)
+        Δ = C * D
+        f *= Δ
+        abs(Δ - one(real(T))) < tol && return f, true
     end
+    return f, false
+end
+
+"""
+    Rn_cf(p, ν, n; nmax=2000, tol=-1)
+
+Compute R_n = f_n/f_{n-1} via the continued fraction going to +∞, evaluated by
+convergence-checked Lentz iteration. `nmax` is the iteration cap; `tol` defaults
+to ~16·eps of the working precision.
+"""
+function Rn_cf(p::MSTParams, ν, n; nmax::Int=2000, tol::Real=-1)
+    T = typeof(p.ϵ)
+    tol_use = tol < 0 ? 16 * eps(real(T)) : real(T)(tol)
+    a(j) = j == 1 ? -γn(p, ν, n) : -αn(p, ν, n + j - 2) * γn(p, ν, n + j - 1)
+    b(j) = βn(p, ν, n + j - 1)
+    R, conv = _lentz_cf(a, b, T; tol=tol_use, maxiter=nmax)
+    conv || @warn "Rn_cf: continued fraction did not converge in $nmax terms (n=$n)"
     return R
 end
 
 """
-    Ln_cf(p, ν, n; nmax=150)
+    Ln_cf(p, ν, n; nmax=2000, tol=-1)
 
-Compute L_n = f_n/f_{n+1} via continued fraction going to -∞.
+Compute L_n = f_n/f_{n+1} via the continued fraction going to −∞, evaluated by
+convergence-checked Lentz iteration.
 """
-function Ln_cf(p::MSTParams, ν, n; nmax=150)
-    n < -nmax && throw(ArgumentError(
-        "Ln_cf: index n=$n below CF window -nmax=$(-nmax) (would silently return 0); " *
-        "raise nmax_cf"))
-    L = zero(p.ϵ)
-    for k in -nmax:n
-        α_k = αn(p, ν, k)
-        β_k = βn(p, ν, k)
-        γ_k = γn(p, ν, k)
-        L = -α_k / (β_k + γ_k * L)
-    end
+function Ln_cf(p::MSTParams, ν, n; nmax::Int=2000, tol::Real=-1)
+    T = typeof(p.ϵ)
+    tol_use = tol < 0 ? 16 * eps(real(T)) : real(T)(tol)
+    a(j) = j == 1 ? -αn(p, ν, n) : -γn(p, ν, n - j + 2) * αn(p, ν, n - j + 1)
+    b(j) = βn(p, ν, n - j + 1)
+    L, conv = _lentz_cf(a, b, T; tol=tol_use, maxiter=nmax)
+    conv || @warn "Ln_cf: continued fraction did not converge in $nmax terms (n=$n)"
     return L
 end
 
@@ -75,7 +99,7 @@ end
 Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax.
 Normalized so that f_0 = 1.
 """
-function compute_fn(p::MSTParams, ν; nmax::Int=80, nmax_cf::Int=max(150, nmax + 50))
+function compute_fn(p::MSTParams, ν; nmax::Int=80, nmax_cf::Int=2000)
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
     f[0] = one(T)
@@ -99,7 +123,7 @@ end
 Like `compute_fn` but with f_n = 0 for n < nmin.
 """
 function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80,
-                              nmax_cf::Int=max(150, nmax + 50))
+                              nmax_cf::Int=2000)
     T = typeof(p.ϵ)
     f = Dict{Int, T}()
 
