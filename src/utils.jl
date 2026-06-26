@@ -39,15 +39,15 @@ _cgamma(z) = gamma(z)
 
 function pochhammer(a, n::Int)
     if n == 0
-        return complex(1.0)
+        return one(complex(a))
     elseif n > 0
-        result = complex(1.0)
+        result = one(complex(a))
         for k in 0:n-1
             result *= (a + k)
         end
         return result
     else  # n < 0
-        result = complex(1.0)
+        result = one(complex(a))
         for k in 1:(-n)
             result /= (a - k)
         end

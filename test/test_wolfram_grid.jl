@@ -93,12 +93,9 @@ end
 
 # ============================================================
 #  Precision status: the stack is type-generic and RUNS in BigFloat,
-#  but the radial/λ/monodromy layers are still Float64-ACCURATE.
-#  These guards lock in the current contract and will auto-flag
-#  (Test reports "Unexpectedly Pass") once the precision refactor
-#  makes BigFloat genuinely high-accuracy.
+#  and (after Track A) the radial layer is genuinely high-accuracy too.
 # ============================================================
-@testset "precision status (BigFloat type-generic; accuracy gap documented)" begin
+@testset "precision status (BigFloat type-generic and high-accuracy)" begin
     s, l, m = -2, 2, 2
 
     # The BigFloat path must keep working (type-genericity is a real feature).
@@ -109,11 +106,9 @@ end
     rin_big = Rin(p_big, ν_big, compute_fn(p_big, ν_big), BigFloat("10.0"))
     @test rin_big isa Complex{BigFloat}
 
-    # KNOWN LIMITATION: BigFloat Rin is currently only ~1e-9 accurate
-    # (radial layer downcasts to ComplexF64). Wolfram 20-digit reference
-    # for s=-2,l=m=2,a=0,ω=0.3 at r=10:
+    # After A4, BigFloat Rin is full precision; it now matches the Wolfram
+    # 20-digit reference (s=-2,l=m=2,a=0,ω=0.3, r=10) to reference accuracy.
+    # (Was @test_broken at ≤1e-15 while the radial layer was ComplexF64-capped.)
     rin_ref = -129.59365769310846802183839606 + 1631.98664264768867986542190811im
-    # @test_broken: expected to FAIL now; flips to "Unexpectedly Pass" after
-    # the H2F1Params/HUParams generic-precision refactor.
-    @test_broken relerr(rin_big, rin_ref) < 1e-15
+    @test relerr(rin_big, rin_ref) < 1e-15
 end

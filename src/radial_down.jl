@@ -30,7 +30,7 @@ Rdown = R^ν_+ / norm, normalized so that at infinity:
 
 norm = A^ν_+ · ω^{-1} · exp(-i(ε ln ε - (1-κ)/2 · ε))
 """
-function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
+function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))))
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -47,7 +47,7 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
              (zhat - ϵ*κ)^(-s - im*ϵp)
 
     # HU cache with recurrence + fallback
-    hu_cache = Dict{Int, ComplexF64}()
+    hu_cache = Dict{Int, typeof(p.ϵ)}()
 
     function get_hu(n::Int)
         haskey(hu_cache, n) && return hu_cache[n]
@@ -74,12 +74,12 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
     # (the i^n from the image formula is already absorbed into
     #  hu_exact via c^n = (2iẑ)^n = i^n (2ẑ)^n)
     function fplus(n::Int)
-        fn_n = get(fn, n, complex(0.0))
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
         return fn_n
     end
 
     # Sum bidirectionally
-    result = complex(0.0)
+    result = zero(typeof(p.ϵ))
     for n in 0:nmax
         fp = fplus(n)
         iszero(fp) && continue
@@ -88,7 +88,7 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = complex(0.0)
+    res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
         fp = fplus(n)
         iszero(fp) && continue

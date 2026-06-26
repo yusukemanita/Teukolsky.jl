@@ -15,13 +15,15 @@ using Printf
 #  are TIGHTENED as each phase lands (git history tracks the progress); the
 #  printed table is the live precision tracker.
 #
-#  Status (after A2 — ν monodromy nmax adaptive + full-precision 2π literals):
-#    λ    : exact at a=0; ~1e-15 Kerr (Float64 LAPACK)            → A1 tightens
-#    ν    : 1e-28..1e-16 (a=0 best; Kerr λ-limited)               ✓ A2 landed
-#    Binc : ~1e-16 (small/mid ω); ~1e-6 at ω=2                    → A5/A6
-#    Rin/Rup: ~1e-9 (to ~1e-2 on the integer branch)             → A4
-#  Ultimate target at 256 bits: ≲1e-25 for every layer (ref is 30-digit, so the
-#  gate can only measure down to ~1e-28).
+#  Status (after A2 ν, A5 _cgamma, A4 radial — all landed):
+#    λ    : exact at a=0; ~1e-15 Kerr (Float64 LAPACK)            → A1 (low pri)
+#    ν    : full precision (a=0); Kerr λ-limited                  ✓ A2
+#    Binc : full precision (self-converges ~1e-74); the residual ~1e-16 below
+#           is the Wolfram WP-30 reference's own amplitude accuracy, not a cap ✓ A5
+#    Rin/Rup: full precision — see the reference-free Wronskian testset below ✓ A4
+#  Note: the Wolfram@30 grid measures λ/ν well but its radial & amplitude values
+#  are only ~9–16 digits at these points, so it cannot gate Rin/Binc below that.
+#  The Wronskian-constancy testset is the true radial-precision metric.
 # ============================================================
 
 pb(s) = parse(BigFloat, s)
@@ -85,6 +87,37 @@ const REF_FILE = joinpath(@__DIR__, "wolfram_ref_hp.txt")
                 if small_ω && rup_ok
                     @test eRup < 1e-7
                 end
+            end
+        end
+    end
+end
+
+# ============================================================
+#  Reference-free radial precision: Wronskian constancy at 256 bits.
+#  W(r) = Δ^{s+1}(Rin·dRup − dRin·Rup) is analytically r-independent, so its
+#  variation across r measures the radial accuracy directly — without a Wolfram
+#  reference (whose WP-30 radial values are only ~9–16 digits at these points).
+#  Pre-A4 this was ~1e-13..1e-9 (ComplexF64-capped radial layer); post-A4 it is
+#  full precision (Kerr cases are λ-limited until A1).
+# ============================================================
+@testset "radial precision — Wronskian constancy (256-bit, reference-free)" begin
+    setprecision(BigFloat, 256) do
+        wron(s, l, m, a, om) = begin
+            ω = Complex{BigFloat}(BigFloat(om)); ν, p = compute_nu(s, l, m, BigFloat(a), ω)
+            fn = compute_fn(p, ν)
+            W(r) = (BigFloat(r)^2 - 2BigFloat(r) + BigFloat(a)^2)^(s+1) *
+                   (Rin(p, ν, fn, BigFloat(r)) * dRup(p, ν, fn, BigFloat(r)) -
+                    dRin(p, ν, fn, BigFloat(r)) * Rup(p, ν, fn, BigFloat(r)))
+            abs(W(4) - W(8)) / abs(W(4))
+        end
+        # a=0 (λ exact) reaches deep precision; Kerr is λ-limited (A1).
+        for (s, l, m, a, om, tol) in [
+                (-2, 2, 2, 0.0, 0.3, 1e-18), (-2, 2, 2, 0.0, 0.5, 1e-18),
+                ( 0, 0, 0, 0.0, 0.5, 1e-18),
+                (-2, 2, 2, 0.9, 0.5, 1e-13), (-2, 2, 2, 0.9, 1.0, 1e-13),
+                ( 0, 2, 1, 0.7, 1.5, 1e-13)]
+            @testset "s=$s l=$l m=$m a=$a ω=$om" begin
+                @test wron(s, l, m, a, om) < tol
             end
         end
     end

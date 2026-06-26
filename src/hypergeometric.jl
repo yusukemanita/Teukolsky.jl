@@ -17,15 +17,81 @@ using HypergeometricFunctions: _₂F₁, _₁F₁
 #           + Γ(b-1)/Γ(a) z^(1-b) M(a+1-b, 2-b, z)
 # ============================================================
 
+"""
+    hypergeometric_U_asymptotic(a, b, z; nterms=80)
+
+Asymptotic expansion of U(a, b, z) for large |z| with optimal truncation:
+
+    U(a, b, z) ~ z^{-a} Σ_{k=0}^{N} (a)_k (a-b+1)_k / (k! (-z)^k)
+
+The series is truncated at the term of smallest magnitude (optimal truncation
+for asymptotic series).  Returns (value, min_term_ratio) where min_term_ratio
+is |smallest term| / |partial sum| — a rough accuracy estimate.
+"""
+function hypergeometric_U_asymptotic(a, b, z; nterms::Int=80)
+    epsR = eps(real(promote_type(typeof(complex(a)), typeof(complex(b)), typeof(complex(z)))))
+    inv_mz = -1 / z  # 1/(-z)
+    term = one(complex(a))
+    s = term
+    min_abs_term = abs(term)
+    s_at_min = s
+    prev_abs = abs(term)
+    for k in 1:nterms
+        term *= (a + k - 1) * (a - b + k) * inv_mz / k
+        at = abs(term)
+        if at > prev_abs && k > 1
+            # Terms are growing — stop before adding this term (optimal truncation)
+            break
+        end
+        s += term
+        if at < min_abs_term
+            min_abs_term = at
+            s_at_min = s
+        end
+        prev_abs = at
+        at < epsR * abs(s) && break
+    end
+    accuracy = abs(s) > 0 ? min_abs_term / abs(s) : Inf
+    return z^(-a) * s_at_min, accuracy
+end
+
+"""
+    hypergeometric_U_asymptotic_accuracy(a, b, z)
+
+Estimate the accuracy of the asymptotic expansion for U(a, b, z)
+without computing the full expansion. Returns the estimated relative
+accuracy (smaller is better).
+"""
+function hypergeometric_U_asymptotic_accuracy(a, b, z)
+    abs(z) < 5.0 && return Inf
+    _, accuracy = hypergeometric_U_asymptotic(a, b, z)
+    return accuracy
+end
+
 function hypergeometric_U(a, b, z)
-    # For near-integer b, add small perturbation to avoid Gamma poles
-    b_int = round(Int, real(b))
-    if abs(b - b_int) < 1e-8
-        b = b + 1e-8im
+    R = real(promote_type(typeof(complex(a)), typeof(complex(z))))
+    # Asymptotic-vs-Kummer gate. The asymptotic series is fundamentally limited
+    # to ~exp(-|z|) (optimal truncation); accept it only if it meets the working
+    # precision. For Float64 keep the loose 1e-6 gate (Kummer catastrophically
+    # cancels beyond |z|≈15 with only 53 bits); at higher precision the extra
+    # digits absorb the Kummer cancellation, so demand near-eps from asymptotic.
+    acc_tol = (R === Float64 || R === Float32) ? 1e-6 : eps(R)^(3//4)
+    if abs(z) > 10
+        val, accuracy = hypergeometric_U_asymptotic(a, b, z)
+        accuracy < acc_tol && return val
+        # Asymptotic not accurate enough — fall through to the convergent Kummer form.
     end
 
-    term1 = _cgamma(complex(1 - b)) / _cgamma(complex(a + 1 - b)) * _₁F₁(a, b, z)
-    term2 = _cgamma(complex(b - 1)) / _cgamma(complex(a)) * z^(1 - b) * _₁F₁(a + 1 - b, 2 - b, z)
+    # Kummer relation for moderate/small |z|
+    # For near-integer b, add a small (precision-scaled) perturbation off the Γ pole.
+    b_pert = b
+    b_int = round(Int, real(b))
+    if abs(b - b_int) < sqrt(eps(R))
+        b_pert = b + sqrt(eps(R)) * im
+    end
+
+    term1 = _cgamma(complex(1 - b_pert)) / _cgamma(complex(a + 1 - b_pert)) * _₁F₁(a, b_pert, z)
+    term2 = _cgamma(complex(b_pert - 1)) / _cgamma(complex(a)) * z^(1 - b_pert) * _₁F₁(a + 1 - b_pert, 2 - b_pert, z)
     return term1 + term2
 end
 
@@ -34,18 +100,20 @@ end
 #  Follows MST.m lines 139-167
 # ============================================================
 
-struct H2F1Params
-    aF::ComplexF64  # ν + 1 - iτ
-    bF::ComplexF64  # -ν - iτ
-    cF::ComplexF64  # 1 - s - i(ε+τ)
-    x::ComplexF64   # (r+ - r) / (2κ)
+struct H2F1Params{T<:Complex}
+    aF::T  # ν + 1 - iτ
+    bF::T  # -ν - iτ
+    cF::T  # 1 - s - i(ε+τ)
+    x::T   # (r+ - r) / (2κ)
 end
 
 function H2F1Params(p::MSTParams, ν, x)
     aF = ν + 1 - im * p.τ
     bF = -ν - im * p.τ
     cF = 1 - p.s - im * (p.ϵ + p.τ)
-    H2F1Params(aF, bF, cF, complex(x))
+    xc = complex(x)
+    T  = promote_type(typeof(aF), typeof(bF), typeof(cF), typeof(xc))
+    H2F1Params{T}(convert(T, aF), convert(T, bF), convert(T, cF), convert(T, xc))
 end
 
 function h2f1_exact(hp::H2F1Params, n::Int)
@@ -131,10 +199,17 @@ end
 #  where aU = ν+s+1-iε, bU = 2ν+2, c = -2i·ẑ
 # ============================================================
 
-struct HUParams
-    aU::ComplexF64  # ν + s + 1 - iε
-    bU::ComplexF64  # 2ν + 2
-    c::ComplexF64   # -2i * ẑ
+struct HUParams{T<:Complex}
+    aU::T  # ν + s + 1 - iε
+    bU::T  # 2ν + 2
+    c::T   # -2i * ẑ
+end
+
+# Promoting constructor (also used by radial_down's direct call).
+function HUParams(aU, bU, c)
+    aUc, bUc, cc = complex(aU), complex(bU), complex(c)
+    T = promote_type(typeof(aUc), typeof(bUc), typeof(cc))
+    HUParams{T}(convert(T, aUc), convert(T, bUc), convert(T, cc))
 end
 
 function HUParams(p::MSTParams, ν, zhat)

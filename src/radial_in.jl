@@ -11,34 +11,26 @@
 #  fIn_n = fn[n]  (for Teukolsky)
 # ============================================================
 
-"""
-    Rin(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
+# ── InTrans / Btrans factor (shared by Rin and dRin) ─────────────────────────
+function _intrans(p::MSTParams, fn, nmax::Int)
+    s, ε, τ, κ = p.s, p.ϵ, p.τ, p.κ
+    Σfn = sum(get(fn, n, zero(typeof(p.ϵ))) for n in -nmax:nmax)
+    prefac = (4 * one(ε))^s * κ^(2s) * exp(im * (ε + τ) * κ * (0.5 + log(κ) / (1 + κ)))
+    return prefac * Σfn
+end
 
-Compute the (un-normalized) ingoing radial Teukolsky solution at r.
-
-Summation matches Teukolsky package (MST.m lines 531-535):
-- stop when fn[n] = 0 (beyond the computed dict range)
-- stop when the sum no longer changes in Float64 (machine-precision convergence)
-- stop when |term| < tol * |sum| + tol (relative+absolute tolerance)
-
-For the transmission-normalized version (matching Mathematica's
-`TeukolskyRadial["In",...]`), call `Rin_phys` instead.
-"""
-function Rin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
+# ── Raw (un-normalized) MST series — internal use only ───────────────────────
+function _Rin_raw(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))))
     κ = p.κ
     rp = p.rp
     x = complex((rp - r) / (2κ))
 
     hp = H2F1Params(p, ν, x)
 
-    # Prefactor: (-x)^{-s - i(ε+τ)/2} (1-x)^{i(ε-τ)/2} exp(iεκx)
     ϵ, τ, s = p.ϵ, p.τ, p.s
     prefac = (-x)^(-s - im*(ϵ + τ)/2) * (1 - x)^(im*(ϵ - τ)/2) * exp(im*ϵ*κ*x)
 
-    # H2F1 cache with recurrence + Teukolsky-compatible cancellation fallback.
-    # Fix #3: when recurrence gives val=0, Max[{t1,t2}/0]=∞>2 in Mathematica
-    # → always fall back to H2F1Exact. Replicate by checking iszero(val).
-    h2f1_cache = Dict{Int, ComplexF64}()
+    h2f1_cache = Dict{Int, typeof(p.ϵ)}()
 
     function get_h2f1(n::Int)
         haskey(h2f1_cache, n) && return h2f1_cache[n]
@@ -50,11 +42,10 @@ function Rin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
             v_nm1 = get_h2f1(n - 1)
             t1, t2 = h2f1_up(hp, n, v_nm2, v_nm1)
             val = t1 + t2
-            # Fix #3: fall back when val=0 OR significant cancellation
             if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
                 val = h2f1_exact(hp, n)
             end
-        else  # n <= -1
+        else
             v_np2 = get_h2f1(n + 2)
             v_np1 = get_h2f1(n + 1)
             t1, t2 = h2f1_down(hp, n, v_np2, v_np1)
@@ -68,31 +59,25 @@ function Rin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         return val
     end
 
-    # ── Upward sum: n = 0, 1, 2, … ─────────────────────────────────────────
-    # Fix #2: match Teukolsky's adaptive termination (MST.m line 532):
-    #   While[resUp != (resUp += term[nUp]) && |term| > tol, nUp++]
-    # i.e. stop when sum stops changing in Float64 OR term is within tolerance.
-    # Also: fn[n]=0 (beyond dict) → term=0 → sum unchanged → stop (Fix #4).
-    result = complex(0.0)
+    result = zero(typeof(p.ϵ))
     for n in 0:nmax
-        fn_n = get(fn, n, complex(0.0))
-        iszero(fn_n) && break  # Fix #4: break (not continue) to match Teukolsky
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
+        iszero(fn_n) && break
         term = prefac * fn_n * get_h2f1(n)
         old = result
         result += term
-        result == old && break  # Fix #2: float convergence
+        result == old && break
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    # ── Downward sum: n = -1, -2, … ─────────────────────────────────────────
-    res_down = complex(0.0)
+    res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
-        fn_n = get(fn, n, complex(0.0))
-        iszero(fn_n) && break  # Fix #4
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
+        iszero(fn_n) && break
         term = prefac * fn_n * get_h2f1(n)
         old = res_down
         res_down += term
-        res_down == old && break  # Fix #2
+        res_down == old && break
         abs(term) < tol * abs(res_down) + tol && break
     end
 
@@ -100,40 +85,29 @@ function Rin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
 end
 
 """
-    Rin_phys(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
+    Rin(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
 
-Transmission-normalized ingoing Teukolsky solution, matching Mathematica's
-`TeukolskyRadial["In",...]` convention:
+Transmission-normalized ingoing Teukolsky solution at r, matching
+Mathematica's `TeukolskyRadial["In",...]` convention:
 
-    Rin_phys = Rin_raw / InTrans
+    Rin = Rin_raw / Btrans
 
-where `InTrans = Btrans = 4^s κ^{2s} exp(i(ε+τ)κ(½ + logκ/(1+κ))) Σfn`.
+where `Btrans = 4^s κ^{2s} exp(i(ε+τ)κ(½ + logκ/(1+κ))) Σfn`.
 
-This quantity is smooth across ν branch transitions (real / half-integer /
-integer), whereas the raw `Rin` can jump by a large factor at each branch
-boundary because it carries the ν-dependent normalization.
-
-Physical note: the waveform formula G = Rin_raw × Bref / (2iω Binc)
-is already correct as written (Btrans cancels), but when comparing directly
-with Mathematica's MSTRadialIn output, use Rin_phys.
+This is smooth across ν branch transitions (real / half-integer / integer).
 """
-function Rin_phys(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
-    raw = Rin(p, ν, fn, r; nmax=nmax, tol=tol)
-    # InTrans = Btrans (MST.m Teukolsky case, line 106)
-    s, ε, τ, κ = p.s, p.ϵ, p.τ, p.κ
-    Σfn = sum(get(fn, n, complex(0.0)) for n in -nmax:nmax)
-    prefac_it = ComplexF64(4)^s * κ^(2s) * exp(im * (ε + τ) * κ * (0.5 + log(κ) / (1 + κ)))
-    InTrans = prefac_it * Σfn
-    return raw / InTrans
+function Rin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))))
+    raw = _Rin_raw(p, ν, fn, r; nmax=nmax, tol=tol)
+    return raw / _intrans(p, fn, nmax)
 end
 
 """
     dRin(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
 
-Compute dR_in/dr at Boyer-Lindquist radius r.
-Applies the same Teukolsky-compatible summation and cancellation fixes as Rin.
+Compute dR_in/dr at Boyer-Lindquist radius r, transmission-normalized
+(i.e. d/dr[Rin_raw / Btrans]).
 """
-function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
+function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))))
     κ = p.κ
     rp = p.rp
     x = complex((rp - r) / (2κ))
@@ -143,7 +117,6 @@ function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
 
     ϵ, τ, s = p.ϵ, p.τ, p.s
 
-    # Prefactor and its x-derivative
     pow_neg_x = (-x)^(-s - im*(ϵ + τ)/2)
     pow_1_x = (1 - x)^(im*(ϵ - τ)/2)
     exp_part = exp(im*ϵ*κ*x)
@@ -164,9 +137,8 @@ function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
     dprefac = dprefac_dx * dxdr
     prefac_dxdr = prefac * dxdr
 
-    # H2F1 and dH2F1 caches — same cancellation fix as Rin
-    h2f1_cache = Dict{Int, ComplexF64}()
-    dh2f1_cache = Dict{Int, ComplexF64}()
+    h2f1_cache = Dict{Int, typeof(p.ϵ)}()
+    dh2f1_cache = Dict{Int, typeof(p.ϵ)}()
 
     function get_h2f1(n::Int)
         haskey(h2f1_cache, n) && return h2f1_cache[n]
@@ -210,10 +182,9 @@ function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         return val
     end
 
-    # Upward sum with same termination rules as Rin
-    result = complex(0.0)
+    result = zero(typeof(p.ϵ))
     for n in 0:nmax
-        fn_n = get(fn, n, complex(0.0))
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
         iszero(fn_n) && break
         term = fn_n * (dprefac * get_h2f1(n) + prefac_dxdr * get_dh2f1(n))
         old = result
@@ -222,9 +193,9 @@ function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = complex(0.0)
+    res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
-        fn_n = get(fn, n, complex(0.0))
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
         iszero(fn_n) && break
         term = fn_n * (dprefac * get_h2f1(n) + prefac_dxdr * get_dh2f1(n))
         old = res_down
@@ -233,5 +204,5 @@ function dRin(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14)
         abs(term) < tol * abs(res_down) + tol && break
     end
 
-    return result + res_down
+    return (result + res_down) / _intrans(p, fn, nmax)
 end

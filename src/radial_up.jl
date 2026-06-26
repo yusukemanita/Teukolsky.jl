@@ -35,7 +35,7 @@ Matches Mathematica's MSTRadialUp convention (norm = UpTrans).
 If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
 used directly and `A^ν_-` is not recomputed.
 """
-function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
+function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))),
              ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
@@ -50,11 +50,13 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
              exp(-im*π*s) * (zhat - ϵ*κ)^(-s)
 
     # HU cache with recurrence + fallback
-    hu_cache = Dict{Int, ComplexF64}()
+    hu_cache = Dict{Int, typeof(p.ϵ)}()
     # Check if asymptotic expansion converges well for n=0.
     # If so, bypass the (potentially unstable) recurrence for all n.
     _asymp_acc = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
-    use_exact_all = _asymp_acc < 1e-6
+    _Rr = real(typeof(p.ϵ))
+    _acc_tol = (_Rr === Float64 || _Rr === Float32) ? 1e-6 : eps(_Rr)^(3//4)
+    use_exact_all = _asymp_acc < _acc_tol
 
     function get_hu(n::Int)
         haskey(hu_cache, n) && return hu_cache[n]
@@ -79,14 +81,14 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
 
     # fUp_n coefficient
     function fup(n::Int)
-        fn_n = get(fn, n, complex(0.0))
-        iszero(fn_n) && return complex(0.0)
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
+        iszero(fn_n) && return zero(typeof(p.ϵ))
         (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
                  pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
     end
 
     # Sum bidirectionally
-    result = complex(0.0)
+    result = zero(typeof(p.ϵ))
     for n in 0:nmax
         fu = fup(n)
         iszero(fu) && continue
@@ -95,7 +97,7 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = complex(0.0)
+    res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
         fu = fup(n)
         iszero(fu) && continue
@@ -130,7 +132,7 @@ Normalized by the same Ctrans as `Rup`.
 If `ctrans` is provided (e.g. `amp.Ctrans` from `compute_amplitudes`), it is
 used directly and `A^ν_-` is not recomputed.
 """
-function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
+function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))),
               ctrans=nothing)
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
@@ -167,10 +169,12 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
     prefac_dzdr = prefac * dzhatdr
 
     # HU and dHU caches
-    hu_cache = Dict{Int, ComplexF64}()
-    dhu_cache = Dict{Int, ComplexF64}()
+    hu_cache = Dict{Int, typeof(p.ϵ)}()
+    dhu_cache = Dict{Int, typeof(p.ϵ)}()
     _asymp_acc2 = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
-    use_exact_all2 = _asymp_acc2 < 1e-6
+    _Rr2 = real(typeof(p.ϵ))
+    _acc_tol2 = (_Rr2 === Float64 || _Rr2 === Float32) ? 1e-6 : eps(_Rr2)^(3//4)
+    use_exact_all2 = _asymp_acc2 < _acc_tol2
 
     function get_hu(n::Int)
         haskey(hu_cache, n) && return hu_cache[n]
@@ -215,14 +219,14 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
     end
 
     function fup(n::Int)
-        fn_n = get(fn, n, complex(0.0))
-        iszero(fn_n) && return complex(0.0)
+        fn_n = get(fn, n, zero(typeof(p.ϵ)))
+        iszero(fn_n) && return zero(typeof(p.ϵ))
         (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
                  pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
     end
 
     # Sum: dRup/dr = Σ fUp_n * (dprefac * HU[n] + prefac * dHU[n] * dzhatdr)
-    result = complex(0.0)
+    result = zero(typeof(p.ϵ))
     for n in 0:nmax
         fu = fup(n)
         iszero(fu) && continue
@@ -231,7 +235,7 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Float64=1e-14,
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = complex(0.0)
+    res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
         fu = fup(n)
         iszero(fu) && continue
