@@ -23,6 +23,7 @@ export pochhammer
 export compute_lambda, sYlm, swsh_coefficients
 export SpinWeightedSpheroidalEigenvalue, SpinWeightedSpheroidalHarmonicS
 export TeukolskyRadial, TeukolskyRadialFunction
+export NumericalIntegrationRadial
 
 include("params.jl")
 include("utils.jl")
@@ -36,6 +37,7 @@ include("radial_up.jl")
 include("radial_down.jl")
 include("spheroidal.jl")
 include("teukolsky_radial.jl")
+include("numint_radial.jl")
 include("waveform.jl")
 
 using .Waveform

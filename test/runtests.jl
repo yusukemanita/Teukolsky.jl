@@ -211,3 +211,6 @@ include("test_precision_bigfloat.jl")
 
 # Track B: spheroidal harmonics (B2) and the callable radial object (B1).
 include("test_spheroidal_radial.jl")
+
+# Track B3: NumericalIntegration radial backend.
+include("test_numint_radial.jl")
