@@ -20,6 +20,9 @@ export compute_q, compute_qtilde
 export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
 export pochhammer
+export compute_lambda, sYlm, swsh_coefficients
+export SpinWeightedSpheroidalEigenvalue, SpinWeightedSpheroidalHarmonicS
+export TeukolskyRadial, TeukolskyRadialFunction
 
 include("params.jl")
 include("utils.jl")
@@ -31,6 +34,8 @@ include("hypergeometric.jl")
 include("radial_in.jl")
 include("radial_up.jl")
 include("radial_down.jl")
+include("spheroidal.jl")
+include("teukolsky_radial.jl")
 include("waveform.jl")
 
 using .Waveform

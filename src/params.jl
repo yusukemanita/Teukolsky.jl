@@ -92,24 +92,29 @@ function _rayleigh_refine(M::AbstractMatrix{Complex{R}}, μ::Complex{R},
 end
 
 """
-    compute_lambda(s, l, m, a, ω; l_max=20)
+    _swsh_eigen(s, l, m, a, ω; l_max=20) -> (λ, ells, C)
 
-Compute the angular eigenvalue λ = A_lm - s(s+1) by diagonalizing the
-spherical-spheroidal decomposition matrix (BCS 2009, arXiv:0905.2975).
-Selects the eigenvalue closest to the l(l+1)-s(s+1) guess.
-Works for any precision (Float64, BigFloat).
+Solve the spherical-spheroidal coupling eigenproblem (BCS 2009, arXiv:0905.2975)
+and return the spin-weighted spheroidal eigenvalue `λ` (= A_lm, the angular
+separation constant), the ℓ′ range `ells`, and the spherical-harmonic expansion
+coefficients `C` (unit 2-norm, phase-fixed so the ℓ′=ℓ component is real positive,
+giving S_lm → ₛY_lm as aω→0). The spheroidal harmonic is then
+
+    S_lm(θ,φ) = Σ_{ℓ′} C[ℓ′] · ₛY_{ℓ′m}(θ,φ).
+
+At higher precision the Float64 LAPACK eigenpair is refined to working precision
+by Rayleigh-quotient iteration.
 """
-function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
+function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     R = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))))
     c = R(a) * Complex{R}(complex(ω))
 
-    # Build ℓ range: all ℓ ≥ max(|m|,|s|) up to l_max
     l_min = max(abs(m), abs(s))
     ells  = l_min:l_max
+    il    = l - l_min + 1          # index of the ℓ′=ℓ (dominant) component
+    N     = length(ells)
 
-    N = length(ells)
-    # Float64 LAPACK eigendecomposition → seed for branch selection (and, at
-    # higher precision, for Rayleigh-quotient refinement).
+    # Float64 LAPACK eigendecomposition → seed for branch selection / refinement.
     c64 = ComplexF64(c)
     M64 = zeros(ComplexF64, N, N)
     for (i, li) in enumerate(ells), (j, lj) in enumerate(ells)
@@ -118,18 +123,8 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
 
     # Eigenvalues of M are SWSHEigenvalueSpectral.
     # SpinWeightedSpheroidalEigenvalue = SWSHEigenvalueSpectral - 2m*c + c²
-    # (same correction as in the Mathematica SpinWeightedSpheroidalHarmonics package)
-    #
-    # Selection strategy: compare corrected eigenvalues (= λ) to a perturbative
-    # estimate λ_pert(c).  Using a fixed reference λ₀ = l(l+1)-s(s+1) fails at
-    # large |c| because the true λ can be far from λ₀ and a different branch
-    # gets selected.  The perturbative estimate tracks the correct branch much
-    # better for moderate |c|.
-    #
-    # Perturbative λ to O(c²):
-    #   λ ≈ λ₀ + c·λ₁ + c²·λ₂
-    #   λ₁ = -2m(1 + s²/(l(l+1)))
-    #   λ₂ = H(l+1) - H(l),   H(ℓ) = 2(ℓ²-m²)(ℓ²-s²)/((2ℓ-1)ℓ³(2ℓ+1))
+    # Branch selection: compare corrected eigenvalues to a perturbative λ to O(c²)
+    # (tracks the correct branch better than a fixed l(l+1)-s(s+1) reference).
     λ₀ = l*(l+1) - s*(s+1)
     λ₁ = l > 0 ? -2*m*(1 + s^2 / (l*(l+1))) : zero(Float64)
     H(ℓ) = ℓ == 0 ? 0.0 : 2*(ℓ^2 - m^2)*(ℓ^2 - s^2) / ((2ℓ-1) * ℓ^3 * (2ℓ+1))
@@ -137,12 +132,15 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     λ_pert = ComplexF64(λ₀ + c64*λ₁ + c64^2*λ₂)
 
     F      = eigen(M64)
-    λ_vals = F.values .- 2*m*c64 .+ c64^2   # SpinWeightedSpheroidalEigenvalue
+    λ_vals = F.values .- 2*m*c64 .+ c64^2
     idx    = argmin(abs.(λ_vals .- λ_pert))
 
-    # Float64 path (or a=0, where c=0 makes M diagonal and λ exact): no refinement.
+    # phase-fix to (ℓ′=ℓ component real positive) and unit norm
+    fixphase(v) = (w = v / norm(v); phref = w[il]; iszero(phref) ? w : w * (conj(phref)/abs(phref)))
+
     if R === Float64 || iszero(c)
-        return Complex{R}(λ_vals[idx])
+        # Float64 path / a=0 (diagonal matrix): no refinement needed.
+        return Complex{R}(λ_vals[idx]), ells, fixphase(Complex{R}.(F.vectors[:, idx]))
     end
 
     # Higher precision: refine the selected spectral eigenpair on the Complex{R}
@@ -151,11 +149,18 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     for i in 1:N, j in 1:N
         MR[i, j] = M_matrix_elem(s, c, m, ells[i], ells[j])
     end
-    μ0 = Complex{R}(F.values[idx])
-    v0 = Complex{R}.(F.vectors[:, idx])
-    μ, _ = _rayleigh_refine(MR, μ0, v0)
-    return μ - 2*m*c + c^2
+    μ, v = _rayleigh_refine(MR, Complex{R}(F.values[idx]), Complex{R}.(F.vectors[:, idx]))
+    return μ - 2*m*c + c^2, ells, fixphase(v)
 end
+
+"""
+    compute_lambda(s, l, m, a, ω; l_max=20)
+
+Spin-weighted spheroidal eigenvalue λ = A_lm (angular separation constant), to
+working precision (BCS 2009 spectral matrix + Rayleigh-quotient refinement).
+"""
+compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20) =
+    _swsh_eigen(s, l, m, a, ω; l_max=l_max)[1]
 
 # ============================================================
 #  MSTParams constructor
