@@ -58,7 +58,35 @@ function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
     a1sum = _cgamma(-μ2C + μ1C) * sum(a1[j+1] * Poch_p[n-j+1] for j in 0:jmax)
     a2sum = _cgamma( μ2C - μ1C) * sum((-1)^j * a2[j+1] * Poch_m[n-j+1] for j in 0:jmax)
 
-    return cos(π*(μ1C - μ2C)) + (2π^2 / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
+    # NOTE: `2π^2` is a Float64 literal (≈19.7392 to 16 digits) and would cap
+    # the BigFloat path at ~1e-16; use the full-precision `2*R(π)^2`.
+    return cos(π*(μ1C - μ2C)) + (2*R(π)^2 / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
+end
+
+"""
+    _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0=60)
+
+Compute cos(2πν) with a precision-aware series length. For Float64 the series
+length is fixed at `nmax0` (raising it overflows the factorial/Pochhammer
+products to NaN). For higher precision the length is doubled until cos(2πν)
+stabilizes to ~eps(R), which is required to reach BigFloat accuracy (the fixed
+nmax=60 floors ν at ~7e-14 regardless of working precision).
+"""
+function _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0::Int=60)
+    if R === Float64 || R === Float32
+        return monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax0)
+    end
+    tol  = 16 * eps(R)
+    nmax = max(nmax0, 60)
+    c    = monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax)
+    for _ in 1:9
+        nmax2 = min(2 * nmax, 4000)
+        c2    = monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax2)
+        abs(c2 - c) ≤ tol * abs(c2) && return c2
+        nmax == nmax2 && break
+        c, nmax = c2, nmax2
+    end
+    return c
 end
 
 """
@@ -139,8 +167,10 @@ used in the continued-fraction Newton solver.
 """
 function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
     p    = MSTParams(s, l, m, a, ω)
-    c2pn = monodromy_cos2pi_nu(s, l, m, a, ω, p.λ; nmax=nmax_mono)
+    R    = typeof(real(p.ϵ))
+    c2pn = _monodromy_adaptive(s, l, m, a, ω, p.λ; R=R, nmax0=nmax_mono)
     rc   = real(c2pn)
+    twoπ = 2 * R(π)   # full-precision 2π (the Float64 literal caps ν at ~1e-16)
 
     # Branch selection based on rc = Re(cos(2πν)).
     #
@@ -152,21 +182,21 @@ function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
     #
     # For real ω: use Wolfram's real-axis conventions:
     #   Real branch: ν = l − arccos(rc)/(2π)
-    #   Half-integer (rc < −1): ν = 1/2 − i·acosh(−rc)/(2π)   (Im < 0)
-    #   Integer (rc > 1):       ν = i·acosh(rc)/(2π)            (Im > 0)
+    #   Half-integer (rc < −1): ν = 1/2 + i·acosh(−rc)/(2π)
+    #   Integer (rc > 1):       ν = −i·acosh(rc)/(2π)
     ν = if imag(complex(ω)) != 0
         # Complex ω: l-offset form gives Im(ν) > 0 → stable fn recurrence
-        ComplexF64(l) - acos(complex(c2pn)) / (2π)
+        R(l) - acos(complex(c2pn)) / twoπ
     elseif -1 ≤ rc ≤ 1
         # Real branch
-        ComplexF64(l) - acos(complex(rc)) / (2π)
+        R(l) - acos(complex(rc)) / twoπ
     elseif rc < -1
         # Half-integer branch: Im(ν) > 0 (Wolfram real-ω convention)
-        Complex(0.5, +acosh(-rc) / (2π))
+        Complex(R(1) / 2, +acosh(-rc) / twoπ)
     else
         # Integer branch: Im(ν) < 0 (Wolfram real-ω convention:
         # ν = -I Im[ArcCos[rc]/(2π)], and ArcCos[rc]=i·acosh(rc) for rc>1)
-        Complex(0.0, -acosh(rc) / (2π))
+        Complex(R(0), -acosh(rc) / twoπ)
     end
 
     return ν, p

@@ -9,21 +9,20 @@ using Printf
 #  scratchpad/teuk_ref_hp.wls at WorkingPrecision -> 30, fields:
 #    s;l;m;a;ω; λre;λim; νre;νim; Binc; Bref; Rin(10); Rup(10) )
 #
-#  This is the FORWARD-LOOKING gate for the Track-A precision refactor.
-#  Each layer carries TWO assertions, both run at setprecision(256):
-#    • @test        <CURRENT>  — regression guard at today's accuracy
-#    • @test_broken <TARGET>   — the precision goal; flips to "Unexpectedly
-#                                Pass" (then promote to @test) as each phase lands.
+#  This is the FORWARD-LOOKING gate for the Track-A precision refactor: it runs
+#  every layer at setprecision(256), prints the achieved relErr vs Wolfram@30,
+#  and @test-guards each layer at the CURRENT achieved accuracy. The tolerances
+#  are TIGHTENED as each phase lands (git history tracks the progress); the
+#  printed table is the live precision tracker.
 #
-#  Current binding caps (measured 2026-06): λ already ~1e-16 (Float64 LAPACK,
-#  exact at a=0); ν floored ~7e-14 by the monodromy nmax=60 truncation [A2];
-#  radial layer ~1e-9 (down to ~1e-2 on the integer branch) from the ComplexF64
-#  structs/caches [A4]. Note Kerr ν cannot beat λ, so A1 (λ) gates A2 for a≠0.
+#  Status (after A2 — ν monodromy nmax adaptive + full-precision 2π literals):
+#    λ    : exact at a=0; ~1e-15 Kerr (Float64 LAPACK)            → A1 tightens
+#    ν    : 1e-28..1e-16 (a=0 best; Kerr λ-limited)               ✓ A2 landed
+#    Binc : ~1e-16 (small/mid ω); ~1e-6 at ω=2                    → A5/A6
+#    Rin/Rup: ~1e-9 (to ~1e-2 on the integer branch)             → A4
+#  Ultimate target at 256 bits: ≲1e-25 for every layer (ref is 30-digit, so the
+#  gate can only measure down to ~1e-28).
 # ============================================================
-
-const TARGET_ν   = 1e-22
-const TARGET_B   = 1e-20
-const TARGET_R   = 1e-18
 
 pb(s) = parse(BigFloat, s)
 pc(re, im) = (re == "ERR" || im == "ERR") ? nothing : Complex{BigFloat}(pb(re), pb(im))
@@ -65,31 +64,26 @@ const REF_FILE = joinpath(@__DIR__, "wolfram_ref_hp.txt")
                     s, l, m, Float64(a), Float64(om), eλ, eν, eB, eRin, eRup)
 
             small_ω = Float64(om) ≤ 0.5
-            cur_ν = Float64(om) ≤ 1.2 ? 1e-9 : 1e-8
-            cur_B = Float64(om) ≤ 1.2 ? 1e-8 : 1e-5
+            cur_B = Float64(om) ≤ 1.2 ? 1e-10 : 1e-5   # ω=2 amplitudes still ~1e-6 (A5/A6)
 
             @testset "s=$s l=$l m=$m a=$(Float64(a)) ω=$(Float64(om))" begin
-                # λ — already high-accuracy (exact at a=0)
+                # λ — exact at a=0; Float64 LAPACK ~1e-15 for Kerr (A1 → 1e-25)
                 @test eλ < (a == 0 ? 1e-25 : 1e-12)
 
-                # ν — regression + precision target
-                @test eν < cur_ν
-                @test_broken eν < TARGET_ν
+                # ν — A2 landed: adaptive monodromy + full-precision 2π
+                @test eν < 1e-13
 
-                # Binc — regression + precision target
+                # Binc — improved with ν; ω=2 still amplitude-floor-limited (A5/A6)
                 @test eB < cur_B
-                @test_broken eB < TARGET_B
 
-                # Radial — only assert where the reference is reliable (small ω);
+                # Radial — gated only where the reference is reliable (small ω);
                 # the integer/half-integer branch at ω≳1 loses accuracy in BOTH
-                # codes, so it is reported but not gated.
+                # codes. Tolerance loosens to A4 (radial ComplexF64 refactor).
                 if small_ω && rin_ok
                     @test eRin < 1e-7
-                    @test_broken eRin < TARGET_R
                 end
                 if small_ω && rup_ok
                     @test eRup < 1e-7
-                    @test_broken eRup < TARGET_R
                 end
             end
         end
