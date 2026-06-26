@@ -32,38 +32,63 @@ end
 #  elements couple modes l, l±1, l±2 via angular momentum algebra.
 # ============================================================
 
-function _calF(s::Int, l::Int, m::Int)
-    (s == 0 && l + 1 == 0) && return 0.0
-    return sqrt(((l+1)^2 - m^2) / (2l+3) / (2l+1)) *
-           sqrt(((l+1)^2 - s^2) / (l+1)^2)
+# Coupling coefficients, evaluated in the working real type R (algebraic
+# √(rational) numbers — kept generic so the high-precision matrix is exact to eps(R)).
+function _calF(R::Type, s::Int, l::Int, m::Int)
+    (s == 0 && l + 1 == 0) && return zero(R)
+    return sqrt(R((l+1)^2 - m^2) / (R(2l+3) * R(2l+1))) *
+           sqrt(R((l+1)^2 - s^2) / R((l+1)^2))
 end
 
-function _calG(s::Int, l::Int, m::Int)
-    l == 0 && return 0.0
-    return sqrt((l^2 - m^2) / (4l^2 - 1)) * sqrt(1 - s^2/l^2)
+function _calG(R::Type, s::Int, l::Int, m::Int)
+    l == 0 && return zero(R)
+    return sqrt(R(l^2 - m^2) / R(4l^2 - 1)) * sqrt(one(R) - R(s^2)/R(l^2))
 end
 
-function _calH(s::Int, l::Int, m::Int)
-    (l == 0 || s == 0) && return 0.0
-    return -m*s / (l*(l+1))
+function _calH(R::Type, s::Int, l::Int, m::Int)
+    (l == 0 || s == 0) && return zero(R)
+    return R(-m*s) / R(l*(l+1))
 end
 
-_calA(s, l, m) = _calF(s, l, m) * _calF(s, l+1, m)
-_calB(s, l, m) = _calF(s, l, m)*_calG(s, l+1, m) + _calG(s, l, m)*_calF(s, l-1, m) + _calH(s, l, m)^2
-_calC(s, l, m) = _calG(s, l, m) * _calG(s, l-1, m)
-_calD(s, l, m) = _calF(s, l, m) * (_calH(s, l+1, m) + _calH(s, l, m))
-_calE(s, l, m) = _calG(s, l, m) * (_calH(s, l-1, m) + _calH(s, l, m))
+_calA(R, s, l, m) = _calF(R, s, l, m) * _calF(R, s, l+1, m)
+_calB(R, s, l, m) = _calF(R, s, l, m)*_calG(R, s, l+1, m) + _calG(R, s, l, m)*_calF(R, s, l-1, m) + _calH(R, s, l, m)^2
+_calC(R, s, l, m) = _calG(R, s, l, m) * _calG(R, s, l-1, m)
+_calD(R, s, l, m) = _calF(R, s, l, m) * (_calH(R, s, l+1, m) + _calH(R, s, l, m))
+_calE(R, s, l, m) = _calG(R, s, l, m) * (_calH(R, s, l-1, m) + _calH(R, s, l, m))
 
 function M_matrix_elem(s::Int, c, m::Int, l::Int, lprime::Int)
-    # A_lm at c=0 (diagonal shift)
-    A0 = lprime*(lprime+1) - s*(s+1)
-    if     lprime == l - 2; return -c^2 * _calA(s, lprime, m)
-    elseif lprime == l - 1; return -c^2 * _calD(s, lprime, m) + 2c*s*_calF(s, lprime, m)
-    elseif lprime == l    ; return A0   - c^2 * _calB(s, lprime, m) + 2c*s*_calH(s, lprime, m)
-    elseif lprime == l + 1; return -c^2 * _calE(s, lprime, m) + 2c*s*_calG(s, lprime, m)
-    elseif lprime == l + 2; return -c^2 * _calC(s, lprime, m)
+    R  = real(typeof(c))
+    A0 = lprime*(lprime+1) - s*(s+1)   # A_lm at c=0 (diagonal shift)
+    if     lprime == l - 2; return -c^2 * _calA(R, s, lprime, m)
+    elseif lprime == l - 1; return -c^2 * _calD(R, s, lprime, m) + 2c*s*_calF(R, s, lprime, m)
+    elseif lprime == l    ; return A0   - c^2 * _calB(R, s, lprime, m) + 2c*s*_calH(R, s, lprime, m)
+    elseif lprime == l + 1; return -c^2 * _calE(R, s, lprime, m) + 2c*s*_calG(R, s, lprime, m)
+    elseif lprime == l + 2; return -c^2 * _calC(R, s, lprime, m)
     else;                    return zero(c)
     end
+end
+
+"""
+    _rayleigh_refine(M, μ, v; maxiter=8)
+
+Rayleigh-quotient iteration: refine an eigenpair (μ, v) of `M` from a Float64
+seed to the working precision of `M` (`Complex{R}`). Converges cubically, so a
+few steps suffice; the inverse solve becomes intentionally ill-conditioned as μ
+nears the eigenvalue (the error lies along v and is removed by normalization).
+"""
+function _rayleigh_refine(M::AbstractMatrix{Complex{R}}, μ::Complex{R},
+                          v::AbstractVector{Complex{R}}; maxiter::Int=8) where R
+    Id = Matrix{Complex{R}}(I, size(M))
+    v  = v / norm(v)
+    for _ in 1:maxiter
+        w = (M - μ*Id) \ v          # generic LU in Complex{R}
+        (any(!isfinite, w)) && break  # μ hit the eigenvalue exactly — already converged
+        v = w / norm(w)
+        μ_new = (v' * (M * v))       # Rayleigh quotient (v is unit-norm)
+        Δ = abs(μ_new - μ); μ = μ_new
+        Δ ≤ 4*eps(R)*abs(μ) && break
+    end
+    return μ, v
 end
 
 """
@@ -83,13 +108,12 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     ells  = l_min:l_max
 
     N = length(ells)
-    # Matrix diagonalization uses Float64 (LAPACK); sufficient for initial guess
+    # Float64 LAPACK eigendecomposition → seed for branch selection (and, at
+    # higher precision, for Rayleigh-quotient refinement).
     c64 = ComplexF64(c)
-    M   = zeros(ComplexF64, N, N)
-    for (i, li) in enumerate(ells)
-        for (j, lj) in enumerate(ells)
-            M[i, j] = M_matrix_elem(s, c64, m, li, lj)
-        end
+    M64 = zeros(ComplexF64, N, N)
+    for (i, li) in enumerate(ells), (j, lj) in enumerate(ells)
+        M64[i, j] = M_matrix_elem(s, c64, m, li, lj)
     end
 
     # Eigenvalues of M are SWSHEigenvalueSpectral.
@@ -112,11 +136,25 @@ function compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
     λ₂ = l > 0 ? H(l+1) - H(l) : zero(Float64)
     λ_pert = ComplexF64(λ₀ + c64*λ₁ + c64^2*λ₂)
 
-    evals  = eigvals(M)
-    λ_vals = evals .- 2*m*c64 .+ c64^2   # corrected eigenvalues = SpinWeightedSpheroidalEigenvalue
+    F      = eigen(M64)
+    λ_vals = F.values .- 2*m*c64 .+ c64^2   # SpinWeightedSpheroidalEigenvalue
     idx    = argmin(abs.(λ_vals .- λ_pert))
 
-    return Complex{R}(λ_vals[idx])
+    # Float64 path (or a=0, where c=0 makes M diagonal and λ exact): no refinement.
+    if R === Float64 || iszero(c)
+        return Complex{R}(λ_vals[idx])
+    end
+
+    # Higher precision: refine the selected spectral eigenpair on the Complex{R}
+    # matrix via Rayleigh-quotient iteration (Float64 LAPACK gives only ~1e-15).
+    MR = Matrix{Complex{R}}(undef, N, N)
+    for i in 1:N, j in 1:N
+        MR[i, j] = M_matrix_elem(s, c, m, ells[i], ells[j])
+    end
+    μ0 = Complex{R}(F.values[idx])
+    v0 = Complex{R}.(F.vectors[:, idx])
+    μ, _ = _rayleigh_refine(MR, μ0, v0)
+    return μ - 2*m*c + c^2
 end
 
 # ============================================================

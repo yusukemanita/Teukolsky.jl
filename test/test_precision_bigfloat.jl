@@ -15,15 +15,16 @@ using Printf
 #  are TIGHTENED as each phase lands (git history tracks the progress); the
 #  printed table is the live precision tracker.
 #
-#  Status (after A2 ν, A5 _cgamma, A4 radial — all landed):
-#    λ    : exact at a=0; ~1e-15 Kerr (Float64 LAPACK)            → A1 (low pri)
-#    ν    : full precision (a=0); Kerr λ-limited                  ✓ A2
+#  Status (Track A: A1 λ, A2 ν, A4 radial, A5 _cgamma — all landed):
+#    λ    : exact at a=0; ~1e-30 Kerr (A1 Rayleigh-quotient refinement)  ✓ A1
+#    ν    : full precision (a=0); Kerr now ~1e-20..1e-23                  ✓ A2/A1
 #    Binc : full precision (self-converges ~1e-74); the residual ~1e-16 below
-#           is the Wolfram WP-30 reference's own amplitude accuracy, not a cap ✓ A5
-#    Rin/Rup: full precision — see the reference-free Wronskian testset below ✓ A4
-#  Note: the Wolfram@30 grid measures λ/ν well but its radial & amplitude values
-#  are only ~9–16 digits at these points, so it cannot gate Rin/Binc below that.
-#  The Wronskian-constancy testset is the true radial-precision metric.
+#           is the Wolfram WP-30 reference's own amplitude accuracy        ✓ A5
+#    Rin/Rup: full precision (self-converge ~1e-70..1e-74 across r)        ✓ A4
+#  Note: the Wolfram@30 grid gates λ/ν well, but its radial & amplitude values
+#  are only ~9–16 digits at these points — they cannot gate Rin/Binc below that.
+#  The reference-free metrics are the self-convergence testset (robust) and the
+#  Wronskian-constancy testset (true but conditioning-sensitive at large r).
 # ============================================================
 
 pb(s) = parse(BigFloat, s)
@@ -69,8 +70,9 @@ const REF_FILE = joinpath(@__DIR__, "wolfram_ref_hp.txt")
             cur_B = Float64(om) ≤ 1.2 ? 1e-10 : 1e-5   # ω=2 amplitudes still ~1e-6 (A5/A6)
 
             @testset "s=$s l=$l m=$m a=$(Float64(a)) ω=$(Float64(om))" begin
-                # λ — exact at a=0; Float64 LAPACK ~1e-15 for Kerr (A1 → 1e-25)
-                @test eλ < (a == 0 ? 1e-25 : 1e-12)
+                # λ — exact at a=0; A1 (Rayleigh-quotient refinement) gives Kerr
+                # λ to reference accuracy (~1e-30; gated at 1e-25 with margin).
+                @test eλ < 1e-25
 
                 # ν — A2 landed: adaptive monodromy + full-precision 2π
                 @test eν < 1e-13
@@ -119,6 +121,43 @@ end
             @testset "s=$s l=$l m=$m a=$a ω=$om" begin
                 @test wron(s, l, m, a, om) < tol
             end
+        end
+    end
+end
+
+# ============================================================
+#  Reference-free precision via 256-vs-512-bit self-convergence.
+#  Robust per-quantity metric (unlike the Wronskian, not conditioning-sensitive;
+#  meaningful now that the systematic ComplexF64 downcasts are gone). Each
+#  quantity should agree between 256 and 512 bits to ~256-bit precision.
+# ============================================================
+@testset "self-convergence 256-vs-512 bit (reference-free)" begin
+    selfconv(s, l, m, a, om) = begin
+        at(prec) = setprecision(BigFloat, prec) do
+            ω = Complex{BigFloat}(BigFloat(om)); p = MSTParams(s, l, m, BigFloat(a), ω)
+            amp = compute_amplitudes(s, l, m, BigFloat(a), ω)
+            (λ=p.λ, ν=amp.ν, Binc=amp.Binc,
+             Rin=Rin(p, amp.ν, amp.fn, BigFloat(10)),
+             Rup=Rup(p, amp.ν, amp.fn, BigFloat(10)))
+        end
+        lo, hi = at(256), at(512)
+        # Relative error, falling back to absolute when the value is ~0
+        # (e.g. λ = 0 exactly for s=0,ℓ=0 would give 0/0).
+        rel(x, y) = (d = abs(Complex{BigFloat}(x) - Complex{BigFloat}(y));
+                     ay = abs(Complex{BigFloat}(y)); ay < 1e-50 ? d : d / ay)
+        (λ=rel(lo.λ, hi.λ), ν=rel(lo.ν, hi.ν), Binc=rel(lo.Binc, hi.Binc),
+         Rin=rel(lo.Rin, hi.Rin), Rup=rel(lo.Rup, hi.Rup))
+    end
+    for (s, l, m, a, om) in [(-2,2,2,0.0,0.3), (-2,2,2,0.9,0.5),
+                             (-2,2,2,0.9,1.0), (0,0,0,0.0,0.5), (0,2,1,0.7,1.5)]
+        @testset "s=$s l=$l m=$m a=$a ω=$om" begin
+            e = selfconv(s, l, m, a, om)
+            # Full 256-bit precision is ~1e-76; gate at 1e-55 with wide margin.
+            @test e.λ    < 1e-55
+            @test e.ν    < 1e-55
+            @test e.Binc < 1e-55
+            @test e.Rin  < 1e-55
+            @test e.Rup  < 1e-55
         end
     end
 end
