@@ -37,6 +37,7 @@ export kerr_geo_isco, kerr_geo_photon_sphere_radius
 export kerr_geo_ibso, kerr_geo_isso, kerr_geo_separatrix
 export PNSeries, pneps, pnconst, getcoeff, evalseries, gamma_ratio
 export nu_pn, an_pn, lambda_pn
+export KerrCircularOrbit, convolve_source_circular, TeukolskyPointParticleMode
 
 include("params.jl")
 include("utils.jl")
@@ -58,6 +59,7 @@ include("kerr_geo_constants.jl")  # geodesic constants of motion (after numint_r
 include("kerr_geo_frequencies.jl")  # radial/polar roots + Mino & BL frequencies
 include("special_orbits.jl")        # ISCO, photon sphere, IBSO, ISSO, separatrix
 include("kerr_geo_orbit.jl")        # callable KerrGeoOrbit trajectory
+include("teukolsky_mode.jl")        # B5: source convolution + fluxes
 include("waveform.jl")
 
 using .Waveform

@@ -223,3 +223,6 @@ include("test_geodesics.jl")
 
 # Track B6: post-Newtonian (low-frequency) series.
 include("test_pn.jl")
+
+# Track B5: point-particle source convolution + fluxes.
+include("test_fluxes.jl")

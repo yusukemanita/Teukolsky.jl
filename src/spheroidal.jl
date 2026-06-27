@@ -23,9 +23,26 @@ Spin-weighted spherical harmonic ₛY_{lm}(θ, φ), evaluated to the precision o
 
 (orthonormal over the sphere; reduces to the usual Yₗₘ for s=0).
 """
-function sYlm(s::Int, l::Int, m::Int, θ; φ=0)
+# `deriv`-th θ-derivative of cos(θ/2)^p sin(θ/2)^q (h=θ/2 ⇒ each d/dθ carries ½).
+# Zero coefficients (p,q small) kill the would-be negative exponents.
+function _cshalf_deriv(cz::R, sz::R, p::Int, q::Int, deriv::Int) where {R}
+    pw(b, e) = e < 0 ? zero(R) : b^e
+    if deriv == 0
+        return cz^p * sz^q
+    elseif deriv == 1
+        return (q * pw(cz, p+1) * pw(sz, q-1) - p * pw(cz, p-1) * pw(sz, q+1)) / 2
+    else
+        c0 = q*(q-1); c1 = q*(p+1) + p*(q+1); c2 = p*(p-1)
+        return (c0 * pw(cz, p+2) * pw(sz, q-2) -
+                c1 * pw(cz, p)   * pw(sz, q)   +
+                c2 * pw(cz, p-2) * pw(sz, q+2)) / 4
+    end
+end
+
+function sYlm(s::Int, l::Int, m::Int, θ; φ=0, deriv::Int=0)
     R = typeof(float(real(θ)))
     (l < abs(s) || abs(m) > l) && return zero(Complex{R})
+    deriv in (0, 1, 2) || throw(ArgumentError("deriv must be 0, 1, or 2"))
 
     fac(n) = R(factorial(big(n)))
     pref = R((-1)^m) * sqrt(fac(l+m) * fac(l-m) * R(2l+1) /
@@ -40,7 +57,7 @@ function sYlm(s::Int, l::Int, m::Int, θ; φ=0)
         (ce < 0 || se < 0) && continue
         total += R(binomial(big(l - s), big(r))) *
                  R(binomial(big(l + s), big(r + s - m))) *
-                 R((-1)^(l - r - s)) * cz^ce * sz^se
+                 R((-1)^(l - r - s)) * _cshalf_deriv(cz, sz, ce, se, deriv)
     end
     return Complex{R}(pref * total) * cis(R(m) * R(φ))
 end
@@ -65,13 +82,14 @@ swsh_coefficients(s::Int, l::Int, m::Int, a, ω; l_max::Int=20) =
     (e = _swsh_eigen(s, l, m, a, ω; l_max=l_max); (e[2], e[3]))
 
 """
-    SpinWeightedSpheroidalHarmonicS(s, l, m, a, ω, θ; φ=0, l_max=20)
+    SpinWeightedSpheroidalHarmonicS(s, l, m, a, ω, θ; φ=0, deriv=0, l_max=20)
 
 Spin-weighted spheroidal harmonic S_{slm}(θ, φ) for oblateness aω, to working
-precision. (Pass BigFloat a/ω/θ for a BigFloat harmonic.)
+precision. `deriv` ∈ {0,1,2} returns the θ-derivative ∂^deriv S / ∂θ^deriv.
+(Pass BigFloat a/ω/θ for a BigFloat harmonic.)
 """
 function SpinWeightedSpheroidalHarmonicS(s::Int, l::Int, m::Int, a, ω, θ;
-                                         φ=0, l_max::Int=20)
+                                         φ=0, deriv::Int=0, l_max::Int=20)
     ells, C = swsh_coefficients(s, l, m, a, ω; l_max=l_max)
     R = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))),
                      typeof(float(real(θ))))
@@ -79,7 +97,7 @@ function SpinWeightedSpheroidalHarmonicS(s::Int, l::Int, m::Int, a, ω, θ;
     for (i, lp) in enumerate(ells)
         ci = C[i]
         iszero(ci) && continue
-        S += Complex{R}(ci) * sYlm(s, lp, m, R(θ); φ=φ)
+        S += Complex{R}(ci) * sYlm(s, lp, m, R(θ); φ=φ, deriv=deriv)
     end
     return S
 end
