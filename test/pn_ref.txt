@@ -1,0 +1,72 @@
+# PN (low-frequency) reference for MST renormalized angular momentum nu and
+# MST coefficients a_n^nu, generated from Wolfram Teukolsky 1.1.1.
+#
+# Source: Teukolsky`PN`Private`KerrMSTSeries[s, l, m, ExpOrder]
+# Generator script: test/pn_ref.wls  (wolframscript)
+#
+# Series variable:  eps = epsilon = 2 M omega   (geometric units, M = 1 => eps = 2 omega)
+# Kerr parameters:  q = a/M (Kerr spin),  kappa = Sqrt[1 - q^2]
+#   For Schwarzschild set q -> 0, kappa -> 1.
+#   The "I" symbol is the imaginary unit; expressions are exact rationals * I^k.
+#
+# Conventions (Sasaki-Tagoshi 2003):
+#   nu = l + sum_{i>=0} dnu_i * eps^(i+2)    (renormalized angular momentum)
+#   a_0^nu = 1 (normalization);  a_n^nu solve the MST 3-term recurrence
+#     alpha_n^nu a_{n+1}^nu + beta_n^nu a_n^nu + gamma_n^nu a_{n-1}^nu = 0
+#   ExpOrder = number of eps-orders retained (truncation O[eps]^(ExpOrder+1) on nu).
+#
+# Each block lists NU then A[n] for n in [-ExpOrder-2 .. ExpOrder].
+# Lines are Wolfram InputForm with the private-context prefix stripped.
+# ----------------------------------------------------------------------
+==== MODE s=-2 l=2 m=2 ExpOrder=4 ====
+NU = 2 - (107*eps^2)/210 + (q*eps^3)/6 + (-1695233/9261000 - (85*q^2)/2268)*eps^4
+A[-6] = (-490*q*(1 + 3*q^2)*eps^4*(2*q - (3*I)*kappa))/103041
+A[-5] = (196*(q + 3*q^3)*eps^3)/11449 + (98*(-963 - 9119*q^2 + 4422*q^4)*eps^4)/11025387
+A[-4] = (-7*q*(1 + 3*q^2)*eps^4*(q + I*kappa))/428
+A[-3] = (-7*q*eps^3*(-1 + 3*q^2 + (3*I)*q*kappa))/963 - (7*eps^4*(107 - 1247*q^2 + 1494*q^4 - (642*I)*q*kappa + (1494*I)*q^3*kappa))/206082
+A[-2] = (7*q*eps^3*(-1 + 3*q^2 + (3*I)*q*kappa))/963 + (eps^4*(3531 - 140233*q^2 + 209160*q^4 - (55533*I)*q*kappa + (209160*I)*q^3*kappa))/4121640
+A[-1] = (eps^3*(q + I*kappa))/20 + (eps^4*(-321 - 218*q^2 + 630*q^4 - (218*I)*q*kappa + (630*I)*q^3*kappa))/12840
+A[0] = 1
+A[1] = eps*((-5*q)/9 + ((5*I)/6)*kappa) + (5*eps^2*(9 + 2*q^2 - (3*I)*q*kappa))/162 + (eps^3*(-395442*q - 2350*q^3 + (324783*I)*kappa + (3525*I)*q^2*kappa))/1428840 + (eps^4*(3162078 + 3919824*q^2 - 12140*q^4 - (4252851*I)*q*kappa + (18210*I)*q^3*kappa))/25719120
+A[2] = (5*eps^2*(-6 + 8*q^2 - (7*I)*q*kappa))/98 + (eps^3*(-84*q - 128*q^3 + (315*I)*kappa + (112*I)*q^2*kappa))/1764 + (eps^4*(-39462174 + 79968882*q^2 + 1173560*q^4 - (85630293*I)*q*kappa - (1026865*I)*q^3*kappa))/342286560
+A[3] = (eps^3*(47*q - 51*q^3 - (30*I)*kappa + (54*I)*q^2*kappa))/432 + (eps^4*(-423 + 343*q^2 + 204*q^4 - (312*I)*q*kappa - (216*I)*q^3*kappa))/7776
+A[4] = (eps^4*(90 - 299*q^2 + 213*q^4 + (171*I)*q*kappa - (207*I)*q^3*kappa))/8019
+==== MODE s=-2 l=2 m=0 ExpOrder=4 ====
+NU = 2 - (107*eps^2)/210 + (-1695233/9261000 + (11*q^2)/252)*eps^4
+A[-6] = 0
+A[-5] = (-98*(-1 + q^2)^2*eps^4)/11449
+A[-4] = 0
+A[-3] = (7*(-1 + q^2)*eps^4)/1926
+A[-2] = (-11*(-1 + q^2)*eps^4)/12840
+A[-1] = -1/40*eps^4 + (I/20)*eps^3*kappa
+A[0] = 1
+A[1] = (5*eps^2)/18 + (19519/158760 - (65*q^2)/31752)*eps^4 + ((5*I)/6)*eps*kappa - (I/52920)*(-12029 + 325*q^2)*eps^3*kappa
+A[2] = (15*(-1 + q^2)*eps^2)/49 + ((-730781 + 916006*q^2 - 23525*q^4)*eps^4)/6338640 + ((5*I)/28)*eps^3*kappa
+A[3] = (47*(-1 + q^2)*eps^4)/864 + ((5*I)/72)*(-1 + q^2)*eps^3*kappa
+A[4] = (10*(-1 + q^2)^2*eps^4)/891
+==== MODE s=0 l=0 m=0 ExpOrder=4 ====
+NU = (-7*eps^2)/6 + (-9449/7560 + (3*q^2)/35)*eps^4
+A[-6] = 0
+A[-5] = (-2*(-1 + q^2)^2*eps^4)/4725
+A[-4] = ((4 + 3*q^2 - 7*q^4)*eps^4)/1620 - (I/270)*(-1 + q^2)*eps^3*kappa
+A[-3] = (-2*(-1 + q^2)*eps^2)/81 + ((3729 - 4912*q^2 - 77*q^4)*eps^4)/102060 - (I/243)*(2 + 7*q^2)*eps^3*kappa
+A[-2] = (1/54 - (7*q^2)/54)*eps^2 + ((9679 - 8838*q^2 + 170*q^4)*eps^4)/34020 - (I/9)*eps*kappa - (I/11340)*(2559 + 44*q^2)*eps^3*kappa
+A[-1] = -2/9 + (-1591/2835 - (17*q^2)/1890)*eps^2 + ((-73956143 + 583931*q^2 - 25673*q^4)*eps^4)/50009400 - ((7*I)/27)*eps*kappa + (I/34020)*(-31723 + 291*q^2)*eps^3*kappa
+A[0] = 1
+A[1] = eps^2/2 + (541/360 - q^2/360)*eps^4 + (I/2)*eps*kappa - (I/360)*(-331 + q^2)*eps^3*kappa
+A[2] = ((-1 + q^2)*eps^2)/9 + ((-943 + 1200*q^2 - 5*q^4)*eps^4)/4536 + (I/6)*eps^3*kappa
+A[3] = (11*(-1 + q^2)*eps^4)/360 + (I/60)*(-1 + q^2)*eps^3*kappa
+A[4] = ((-1 + q^2)^2*eps^4)/525
+==== MODE s=-1 l=1 m=1 ExpOrder=4 ====
+NU = 1 - (47*eps^2)/60 + (9*q*eps^3)/47 + (-43908007/71064000 + (3947567*q^2)/87211320)*eps^4
+A[-6] = (-25*q*eps^4*(-26*q + 27*q^3 + (24*I)*kappa - (33*I)*q^2*kappa))/139167
+A[-5] = (8*q*eps^3*(-6 + 7*q^2 - (5*I)*q*kappa))/2209 + (eps^4*(106032 - 84294*q^2 - 87213*q^4 + (176720*I)*q*kappa + (62295*I)*q^3*kappa))/4879681
+A[-4] = (-75*q*eps^2*(q - (2*I)*kappa))/2209 + (50*eps^3*(6627*q + 2198*q^3 - (6627*I)*kappa - (4396*I)*q^2*kappa))/4879681 + (eps^4*(69681844680 - 430274619815*q^2 - 182857937484*q^4 + (1275357822070*I)*q*kappa - (212233542672*I)*q^3*kappa))/3621816350544
+A[-3] = (200*q*eps)/2209 + (-200/2209 - (256250*q^2)/4879681)*eps^2 + (eps^3*(2987993617912*q - 830803558563*q^3 - (385299611760*I)*kappa - (770599223520*I)*q^2*kappa))/5432724525816 + (eps^4*(-23881068403270432 + 5134579201325268*q^2 - 8172741771375039*q^4 + (16424937149717040*I)*q*kappa - (8004214134702240*I)*q^3*kappa))/48003553910110176
+A[-2] = (-5*q*eps^2*(q + I*kappa))/47 - (5*eps^3*(-4418*q + 2949*q^3 - (2209*I)*kappa + (2949*I)*q^2*kappa))/103823 + (eps^4*(-21929286414 - 34775743586*q^2 - 12261805029*q^4 - (41559392612*I)*q*kappa - (12261805029*I)*q^3*kappa))/115589883528
+A[-1] = (5*q*eps^2*(q + I*kappa))/47 + (eps^3*(-28717*q + 88470*q^3 + (37553*I)*kappa + (88470*I)*q^2*kappa))/622938 + (eps^4*(-6968184468 + 12438744251*q^2 + 12261805029*q^4 + (19222393277*I)*q*kappa + (12261805029*I)*q^3*kappa))/115589883528
+A[0] = 1
+A[1] = (-3*eps*(q - (2*I)*kappa))/8 + (eps^2*(12 + q^2 - (2*I)*q*kappa))/32 + (eps^3*(-107788*q + 561*q^3 + (119816*I)*kappa - (1122*I)*q^2*kappa))/268800 + (eps^4*(56054832 + 22466032*q^2 - 48645*q^4 - (30967352*I)*q*kappa + (97290*I)*q^3*kappa))/151603200
+A[2] = (eps^2*(-6 + 7*q^2 - (5*I)*q*kappa))/25 + (eps^3*(-10*q - 7*q^3 + (40*I)*kappa + (5*I)*q^2*kappa))/200 + (eps^4*(-66672 + 108250*q^2 - 777*q^4 - (101000*I)*q*kappa + (555*I)*q^3*kappa))/360000
+A[3] = (eps^3*(26*q - 27*q^3 - (24*I)*kappa + (33*I)*q^2*kappa))/504 + (eps^4*(-520 + 502*q^2 + 81*q^4 - (288*I)*q*kappa - (99*I)*q^3*kappa))/10080
+A[4] = (eps^4*(120 - 311*q^2 + 192*q^4 + (154*I)*q*kappa - (168*I)*q^3*kappa))/17640

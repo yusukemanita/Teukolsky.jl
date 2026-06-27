@@ -2,21 +2,21 @@
 #  Three-term recurrence coefficients, Eq. (124)
 # ============================================================
 
-function αn(p::MSTParams, ν, n)
+function αn(p, ν, n)
     nν = n + ν
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     im * ϵ * κ * (nν + 1 + s + im*ϵ) * (nν + 1 + s - im*ϵ) * (nν + 1 + im*τ) /
         ((nν + 1) * (2nν + 3))
 end
 
-function βn(p::MSTParams, ν, n)
+function βn(p, ν, n)
     nν = n + ν
     s, ϵ, τ, λ, m, q = p.s, p.ϵ, p.τ, p.λ, p.m, p.q
     -λ - s*(s+1) + nν*(nν+1) + ϵ^2 + ϵ*(ϵ - m*q) +
         ϵ*(ϵ - m*q) * (s^2 + ϵ^2) / (nν * (nν + 1))
 end
 
-function γn(p::MSTParams, ν, n)
+function γn(p, ν, n)
     nν = n + ν
     s, ϵ, κ, τ = p.s, p.ϵ, p.κ, p.τ
     -im * ϵ * κ * (nν - s + im*ϵ) * (nν - s - im*ϵ) * (nν - im*τ) /

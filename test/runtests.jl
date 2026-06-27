@@ -220,3 +220,6 @@ include("test_elliptic.jl")
 
 # Kerr geodesic constants of motion (E, L, Q).
 include("test_geodesics.jl")
+
+# Track B6: post-Newtonian (low-frequency) series.
+include("test_pn.jl")

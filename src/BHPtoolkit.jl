@@ -35,11 +35,15 @@ export kerr_geo_frequencies
 export KerrGeoOrbit, KerrGeoOrbitFunction
 export kerr_geo_isco, kerr_geo_photon_sphere_radius
 export kerr_geo_ibso, kerr_geo_isso, kerr_geo_separatrix
+export PNSeries, pneps, pnconst, getcoeff, evalseries, gamma_ratio
+export nu_pn, an_pn, lambda_pn
 
 include("params.jl")
 include("utils.jl")
 include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
+include("pn_series.jl")   # PNSeries ring (B6)
+include("pn.jl")          # post-Newtonian low-frequency series (B6)
 include("nu_solver.jl")
 include("amplitudes.jl")
 include("branch_cut.jl")
