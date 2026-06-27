@@ -24,9 +24,21 @@ export compute_lambda, sYlm, swsh_coefficients
 export SpinWeightedSpheroidalEigenvalue, SpinWeightedSpheroidalHarmonicS
 export TeukolskyRadial, TeukolskyRadialFunction
 export NumericalIntegrationRadial
+export rf, rd, rj, rc
+export ellK, ellE, ellF, ellEinc, ellPi
+export jacobi_sn, jacobi_am
+export kerr_geo_energy, kerr_geo_angular_momentum
+export kerr_geo_carter_constant, kerr_geo_constants_of_motion
+export kerr_geo_radial_roots, kerr_geo_polar_roots
+export kerr_geo_mino_frequencies, kerr_geo_boyer_lindquist_frequencies
+export kerr_geo_frequencies
+export KerrGeoOrbit, KerrGeoOrbitFunction
+export kerr_geo_isco, kerr_geo_photon_sphere_radius
+export kerr_geo_ibso, kerr_geo_isso, kerr_geo_separatrix
 
 include("params.jl")
 include("utils.jl")
+include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
 include("nu_solver.jl")
 include("amplitudes.jl")
@@ -38,6 +50,10 @@ include("radial_down.jl")
 include("spheroidal.jl")
 include("teukolsky_radial.jl")
 include("numint_radial.jl")
+include("kerr_geo_constants.jl")  # geodesic constants of motion (after numint_radial)
+include("kerr_geo_frequencies.jl")  # radial/polar roots + Mino & BL frequencies
+include("special_orbits.jl")        # ISCO, photon sphere, IBSO, ISSO, separatrix
+include("kerr_geo_orbit.jl")        # callable KerrGeoOrbit trajectory
 include("waveform.jl")
 
 using .Waveform

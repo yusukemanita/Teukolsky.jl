@@ -214,3 +214,9 @@ include("test_spheroidal_radial.jl")
 
 # Track B3: NumericalIntegration radial backend.
 include("test_numint_radial.jl")
+
+# Shared elliptic-integral / Jacobi module (geodesic prerequisite).
+include("test_elliptic.jl")
+
+# Kerr geodesic constants of motion (E, L, Q).
+include("test_geodesics.jl")
