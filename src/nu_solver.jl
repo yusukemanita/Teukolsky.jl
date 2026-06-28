@@ -2,14 +2,33 @@
 #  Monodromy method for cos(2πν)
 # ============================================================
 
+# ------------------------------------------------------------
+#  Reusable monodromy context
+#
+#  The recurrence arrays a1[k], a2[k], Poch_p[k], Poch_m[k] are
+#  TRUNCATION-INDEPENDENT: each entry depends only on lower-index entries and
+#  on k, never on the chosen truncation n.  Only the closing sums depend on n.
+#  So the arrays are built ONCE up to a target depth and the closed-form value
+#  of cos(2πν) is evaluated at any n ≤ depth — and the depth can be EXTENDED by
+#  continuing the recurrence (no rebuild from scratch).  See `_monodromy_value`.
+# ------------------------------------------------------------
+mutable struct _MonodromyCtx{R<:AbstractFloat, C<:Complex{R}}
+    αε::C; γCH::C; δCH::C; εCH::C; qCH::C
+    μ1C::C; μ2C::C
+    a1::Vector{C}; a2::Vector{C}
+    Poch_p::Vector{C}; Poch_m::Vector{C}
+    nfilled::Int          # recurrence computed through truncation `nfilled`
+                          # (valid indices 1 … nfilled+1 in every array)
+end
 
 """
-    monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=60)
+    _build_monodromy_ctx(s, l, m, a, ω, λ, nmax)
 
-Compute cos(2πν) from the monodromy of the confluent Heun equation.
-Works for any numeric precision (Float64, BigFloat, etc.).
+Build the (truncation-independent) monodromy recurrence arrays up to truncation
+`nmax`.  Returns a `_MonodromyCtx` from which `_monodromy_value(ctx, n)` gives
+cos(2πν) for any `n ≤ nmax`, and `_extend_monodromy_ctx!(ctx, n2)` deepens it.
 """
-function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
+function _build_monodromy_ctx(s, _l, m, a, ω, λ, nmax::Int)
     # Infer complex type from inputs
     R = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))))
     C = Complex{R}
@@ -28,11 +47,45 @@ function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
     μ1C = αε - (γCH + δCH)
     μ2C = -αε
 
-    a1 = zeros(C, nmax + 2)
-    a2 = zeros(C, nmax + 2)
+    cap = max(nmax, 1) + 2
+    a1 = zeros(C, cap)
+    a2 = zeros(C, cap)
     a1[1] = one(C); a2[1] = one(C)
+    Poch_p = ones(C, cap)
+    Poch_m = ones(C, cap)
 
-    for n in 1:nmax
+    ctx = _MonodromyCtx{R,C}(αε, γCH, δCH, εCH, qCH, μ1C, μ2C,
+                             a1, a2, Poch_p, Poch_m, 0)
+    return _extend_monodromy_ctx!(ctx, nmax)
+end
+
+"""
+    _extend_monodromy_ctx!(ctx, target)
+
+Continue the monodromy recurrence in-place from `ctx.nfilled` up to truncation
+`target` (no-op if already deep enough).  No values are recomputed — the
+recurrence simply marches forward, so this is cheap relative to a rebuild.
+"""
+function _extend_monodromy_ctx!(ctx::_MonodromyCtx{R,C}, target::Int) where {R,C}
+    target ≤ ctx.nfilled && return ctx
+
+    a1, a2 = ctx.a1, ctx.a2
+    Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
+    need = target + 2
+    if length(a1) < need
+        for v in (a1, a2)
+            old = length(v); resize!(v, need); @views v[old+1:end] .= zero(C)
+        end
+        for v in (Poch_p, Poch_m)
+            old = length(v); resize!(v, need); @views v[old+1:end] .= one(C)
+        end
+    end
+
+    αε, γCH, δCH = ctx.αε, ctx.γCH, ctx.δCH
+    εCH, qCH     = ctx.εCH, ctx.qCH
+    μ1C, μ2C     = ctx.μ1C, ctx.μ2C
+
+    for n in (ctx.nfilled + 1):target
         a1p = a1[n];  a1pp = n >= 2 ? a1[n-1] : zero(C)
         c2 = (αε - (n-1+δCH)) * (αε - (n-2+γCH+δCH)) * εCH / n
         c1 = (αε^2 + αε*(1-2n-γCH-δCH+εCH) +
@@ -44,16 +97,26 @@ function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
         d1 = (αε^2 + (n^2 - qCH + γCH + δCH - n*(1+γCH+δCH-εCH) - εCH) +
               αε*(-1+2n-γCH-δCH+εCH)) / n
         a2[n+1] = -d2*a2pp + d1*a2p
-    end
 
-    Poch_p = ones(C, nmax + 2)
-    Poch_m = ones(C, nmax + 2)
-    for i in 1:nmax
-        Poch_p[i+1] = (-μ2C + μ1C + i - 1) * Poch_p[i]
-        Poch_m[i+1] = ( μ2C - μ1C + i - 1) * Poch_m[i]
+        # Pochhammer factors (original loop index i ≡ n): Poch_x[i+1] = (…)·Poch_x[i]
+        Poch_p[n+1] = (-μ2C + μ1C + n - 1) * Poch_p[n]
+        Poch_m[n+1] = ( μ2C - μ1C + n - 1) * Poch_m[n]
     end
+    ctx.nfilled = target
+    return ctx
+end
 
-    n    = nmax
+"""
+    _monodromy_value(ctx, n)
+
+Evaluate cos(2πν) from a prebuilt `ctx` at truncation `n` (requires
+`n ≤ ctx.nfilled`).  Identical closed form to `monodromy_cos2pi_nu`.
+"""
+function _monodromy_value(ctx::_MonodromyCtx{R,C}, n::Int) where {R,C}
+    a1, a2 = ctx.a1, ctx.a2
+    Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
+    μ1C, μ2C = ctx.μ1C, ctx.μ2C
+
     jmax = cld(n, 2)
     a1sum = _cgamma(-μ2C + μ1C) * sum(a1[j+1] * Poch_p[n-j+1] for j in 0:jmax)
     a2sum = _cgamma( μ2C - μ1C) * sum((-1)^j * a2[j+1] * Poch_m[n-j+1] for j in 0:jmax)
@@ -64,27 +127,53 @@ function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
 end
 
 """
+    monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=60)
+
+Compute cos(2πν) from the monodromy of the confluent Heun equation.
+Works for any numeric precision (Float64, BigFloat, etc.).
+"""
+function monodromy_cos2pi_nu(s, _l, m, a, ω, λ; nmax::Int=60)
+    ctx = _build_monodromy_ctx(s, _l, m, a, ω, λ, nmax)
+    return _monodromy_value(ctx, nmax)
+end
+
+"""
     _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0=60)
 
 Compute cos(2πν) with a precision-aware series length. For Float64 the series
 length is fixed at `nmax0` (raising it overflows the factorial/Pochhammer
-products to NaN). For higher precision the length is doubled until cos(2πν)
-stabilizes to ~eps(R), which is required to reach BigFloat accuracy (the fixed
-nmax=60 floors ν at ~7e-14 regardless of working precision).
+products to NaN). For higher precision the length is chosen from the working
+precision and verified by reusing a SINGLE set of recurrence arrays (no
+rebuild-from-scratch doubling): cos(2πν) is evaluated at the target `nmax` and
+at `nmax−Δ` from the same arrays, and if they have not yet agreed to ~eps(R)
+the arrays are EXTENDED (the recurrence marches forward) and re-checked.
 """
 function _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0::Int=60)
     if R === Float64 || R === Float32
         return monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax0)
     end
     tol  = 16 * eps(R)
-    nmax = max(nmax0, 60)
-    c    = monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax)
-    for _ in 1:9
-        nmax2 = min(2 * nmax, 4000)
-        c2    = monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax2)
-        abs(c2 - c) ≤ tol * abs(c2) && return c2
-        nmax == nmax2 && break
-        c, nmax = c2, nmax2
+    # Series length needed for |Δcos(2πν)| ≲ 16·eps(R): empirically the number
+    # of correct decimal digits grows as ~12.7 + 0.064·nmax, so reaching
+    # ~log10(2)·prec digits needs nmax ≈ 4.70·prec − 198.  Build a bit deeper so
+    # the verification (value at nmax vs nmax−Δ, both from the same arrays)
+    # passes on the first try and no extension/rebuild is needed.
+    prec = precision(R)
+    Δ    = 128
+    # High point ≈ 4.71·prec; the verification low point nmax−Δ then sits a
+    # safe ~70 indices (≈4 decimal digits) above the strict requirement.
+    nmax = clamp(ceil(Int, 4.71 * prec), max(nmax0, 120) + Δ, 4000)
+
+    ctx = _build_monodromy_ctx(s, l, m, a, ω, λ, nmax)
+    c   = _monodromy_value(ctx, nmax)
+    for _ in 1:32
+        nlo = max(nmax0, nmax - Δ)
+        clo = _monodromy_value(ctx, nlo)
+        abs(c - clo) ≤ tol * abs(c) && return c
+        nmax ≥ 4000 && return c                  # safety cap: best effort
+        nmax = min(nmax + 2Δ, 4000)
+        _extend_monodromy_ctx!(ctx, nmax)
+        c = _monodromy_value(ctx, nmax)
     end
     return c
 end
