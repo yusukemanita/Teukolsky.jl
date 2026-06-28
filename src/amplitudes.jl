@@ -45,17 +45,30 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=80, r::Int=0)
     ϵp = p.ϵp
     T = typeof(ϵ)
 
+    # Numerator  Σ_{n≥r} (-1)^n · G(n) · f_n  with the gamma product
+    #   G(n) = Γ(n+r+2ν+1)/Γ(n-r+1) · Γ(n+ν+1+s+iϵ)/Γ(n+ν+1-s-iϵ)
+    #                                · Γ(n+ν+1+iτ)/Γ(n+ν+1-iτ).
+    # Building the consecutive-n arguments by an incremental Pochhammer product —
+    #   G(n)/G(n-1) = (n+r+2ν)(n+ν+s+iϵ)(n+ν+iτ) / [(n-r)(n+ν-s-iϵ)(n+ν-iτ)]
+    # — replaces six full-precision Γ evaluations per term with three mults / three
+    # divides, leaving only the FIVE Γ in the n=r base (Γ(n-r+1)=Γ(1)=1 there). The
+    # ratio stays polynomially bounded (Γ(n+2ν+1)/Γ(n+1) ~ n^{2ν}), so no overflow.
+    sν, dν = ν + 1 + s + im*ϵ, ν + 1 - s - im*ϵ
+    tν, uν = ν + 1 + im*τ,     ν + 1 - im*τ
+    G = _cgamma(T(2r) + 2ν + 1) *
+        _cgamma(T(r) + sν) / _cgamma(T(r) + dν) *
+        _cgamma(T(r) + tν) / _cgamma(T(r) + uν)        # G(r)
+    sgn = isodd(r) ? -one(T) : one(T)                  # (-1)^r
     num_sum = zero(T)
-    for n in r:nmax
-        fn_n = fn[n]
+    fr = get(fn, r, zero(T))
+    iszero(fr) || (num_sum += sgn * G * fr)
+    for n in (r+1):nmax
+        G *= (T(n + r) + 2ν) * (T(n - 1) + sν) * (T(n - 1) + tν) /
+             ((T(n - r)) * (T(n - 1) + dν) * (T(n - 1) + uν))
+        sgn = -sgn
+        fn_n = get(fn, n, zero(T))
         iszero(fn_n) && continue
-        term = (-1)^n * _cgamma(T(n + r) + 2ν + 1) / _cgamma(T(n - r + 1)) *
-               _cgamma(T(n) + ν + 1 + s + im*ϵ) /
-               _cgamma(T(n) + ν + 1 - s - im*ϵ) *
-               _cgamma(T(n) + ν + 1 + im*τ) /
-               _cgamma(T(n) + ν + 1 - im*τ) *
-               fn_n
-        num_sum += term
+        num_sum += sgn * G * fn_n
     end
 
     den_sum = zero(T)
@@ -213,17 +226,30 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=80, r::Int=0)
     ϵp = p.ϵp
     T = typeof(ϵ)
 
+    # Numerator  Σ_{n≥r} (-1)^n · G(n) · f_n  with the gamma product
+    #   G(n) = Γ(n+r+2ν+1)/Γ(n-r+1) · Γ(n+ν+1+s+iϵ)/Γ(n+ν+1-s-iϵ)
+    #                                · Γ(n+ν+1+iτ)/Γ(n+ν+1-iτ).
+    # Building the consecutive-n arguments by an incremental Pochhammer product —
+    #   G(n)/G(n-1) = (n+r+2ν)(n+ν+s+iϵ)(n+ν+iτ) / [(n-r)(n+ν-s-iϵ)(n+ν-iτ)]
+    # — replaces six full-precision Γ evaluations per term with three mults / three
+    # divides, leaving only the FIVE Γ in the n=r base (Γ(n-r+1)=Γ(1)=1 there). The
+    # ratio stays polynomially bounded (Γ(n+2ν+1)/Γ(n+1) ~ n^{2ν}), so no overflow.
+    sν, dν = ν + 1 + s + im*ϵ, ν + 1 - s - im*ϵ
+    tν, uν = ν + 1 + im*τ,     ν + 1 - im*τ
+    G = _cgamma(T(2r) + 2ν + 1) *
+        _cgamma(T(r) + sν) / _cgamma(T(r) + dν) *
+        _cgamma(T(r) + tν) / _cgamma(T(r) + uν)        # G(r)
+    sgn = isodd(r) ? -one(T) : one(T)                  # (-1)^r
     num_sum = zero(T)
-    for n in r:nmax
-        fn_n = fn[n]
+    fr = get(fn, r, zero(T))
+    iszero(fr) || (num_sum += sgn * G * fr)
+    for n in (r+1):nmax
+        G *= (T(n + r) + 2ν) * (T(n - 1) + sν) * (T(n - 1) + tν) /
+             ((T(n - r)) * (T(n - 1) + dν) * (T(n - 1) + uν))
+        sgn = -sgn
+        fn_n = get(fn, n, zero(T))
         iszero(fn_n) && continue
-        term = (-1)^n * _cgamma(T(n + r) + 2ν + 1) / _cgamma(T(n - r + 1)) *
-               _cgamma(T(n) + ν + 1 + s + im*ϵ) /
-               _cgamma(T(n) + ν + 1 - s - im*ϵ) *
-               _cgamma(T(n) + ν + 1 + im*τ) /
-               _cgamma(T(n) + ν + 1 - im*τ) *
-               fn_n
-        num_sum += term
+        num_sum += sgn * G * fn_n
     end
 
     den_sum = zero(T)

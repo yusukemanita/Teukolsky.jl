@@ -64,4 +64,21 @@ end
         @test_throws ArgumentError TeukolskyPointParticleMode(0, 2, 2, 0.0, 10.0)
         @test_throws ArgumentError KerrCircularOrbit(1.2, 10.0)   # |a|>1
     end
+
+    @testset "BigFloat fluxes (regression: 2F1 negative-real-gamma fix)" begin
+        # The small orbital frequency ω = mΩφ drives ν real, which used to crash
+        # the 2F1 connection at |x|>1 (DomainError in HypergeometricFunctions'
+        # loggamma on the negative real axis). BigFloat fluxes must now compute and
+        # agree with the Float64 result to ~F64 precision.
+        for (a, p) in [(0.0, 10.0), (0.9, 6.0)]
+            md64 = TeukolskyPointParticleMode(-2, 2, 2, a, p)
+            mdbf = setprecision(() -> TeukolskyPointParticleMode(-2, 2, 2, big(a), big(p)),
+                                BigFloat, 192)
+            @test mdbf.EnergyFlux.Inf isa BigFloat
+            @test isfinite(mdbf.EnergyFlux.Inf)
+            @test isapprox(Float64(mdbf.EnergyFlux.Inf), md64.EnergyFlux.Inf; rtol=1e-10)
+            @test isapprox(Float64(mdbf.EnergyFlux.Hor), md64.EnergyFlux.Hor; rtol=1e-8)
+            @test sign(mdbf.EnergyFlux.Hor) == sign(md64.EnergyFlux.Hor)
+        end
+    end
 end

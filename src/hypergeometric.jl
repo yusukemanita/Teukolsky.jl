@@ -100,6 +100,58 @@ end
 #  Follows MST.m lines 139-167
 # ============================================================
 
+# ── Robust ₂F₁ for the MST radial sum ───────────────────────────────────────
+# HypergeometricFunctions._₂F₁ routes |x|>1 through a connection formula that
+# evaluates `loggamma` on the parameter combinations. For near-real parameters
+# (real ν, i.e. the low-frequency regime ω = mΩφ ≪ 1) those combinations land on
+# the negative real axis and loggamma throws a DomainError. We catch that and
+# evaluate instead via a gamma-free Pfaff transformation,
+#     ₂F₁(a,b;c;x) = (1-x)^(-a) ₂F₁(a, c-b; c; x/(x-1)),
+# whose argument z' = x/(x-1) ∈ (0,1) for x<0, summed as a direct Maclaurin series
+# (no Γ at all). This only engages on the rare instability-fallback / seed terms
+# where HGF fails, so the well-conditioned-series regime (moderate |n|) is exactly
+# where it is used.
+function _h2f1_pfaff(a, b, c, x)
+    z  = x / (x - 1)
+    bb = c - b
+    T  = promote_type(typeof(complex(a)), typeof(complex(b)),
+                      typeof(complex(c)), typeof(complex(z)))
+    term = one(T)
+    s    = term
+    tol  = eps(real(T))
+    # The Maclaurin series converges geometrically at rate |z|, so reaching `tol`
+    # needs ≈ log(tol)/log|z| terms. Size the cap to the working precision and z
+    # (instead of a fixed window) so deep-precision / large-|z| (large orbit radius)
+    # cases still converge, and warn rather than silently truncate if the cap is hit.
+    az   = abs(z)
+    kmax = 200_000
+    if az < 1
+        est  = log(tol) / log(az) + 64
+        kmax = est < kmax ? ceil(Int, est) : kmax
+    end
+    converged = false
+    for k in 0:kmax-1
+        term *= (a + k) * (bb + k) / ((c + k) * (k + 1)) * z
+        s += term
+        if abs(term) ≤ tol * abs(s)
+            converged = true
+            break
+        end
+    end
+    converged || @warn "_h2f1_pfaff: Maclaurin series hit the $kmax-term cap without \
+                        reaching tol (|z|=$(Float64(az))); result may be sub-precision." maxlog=3
+    return (1 - x)^(-a) * s
+end
+
+@inline function _h2f1_robust(a, b, c, x)
+    try
+        return _₂F₁(a, b, c, x)
+    catch e
+        e isa DomainError || rethrow(e)
+        return _h2f1_pfaff(a, b, c, x)
+    end
+end
+
 struct H2F1Params{T<:Complex}
     aF::T  # ν + 1 - iτ
     bF::T  # -ν - iτ
@@ -117,7 +169,7 @@ function H2F1Params(p::MSTParams, ν, x)
 end
 
 function h2f1_exact(hp::H2F1Params, n::Int)
-    _₂F₁(n + hp.aF, hp.bF - n, hp.cF, hp.x)
+    _h2f1_robust(n + hp.aF, hp.bF - n, hp.cF, hp.x)
 end
 
 """
@@ -156,7 +208,7 @@ end
 
 function dh2f1_exact(hp::H2F1Params, n::Int)
     (n + hp.aF) * (hp.bF - n) / hp.cF *
-        _₂F₁(n + hp.aF + 1, hp.bF - n + 1, hp.cF + 1, hp.x)
+        _h2f1_robust(n + hp.aF + 1, hp.bF - n + 1, hp.cF + 1, hp.x)
 end
 
 """
