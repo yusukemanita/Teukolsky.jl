@@ -179,6 +179,46 @@ integrals, geodesics, PN series, and point-particle fluxes.
 
 ---
 
+## Performance vs. the Mathematica Teukolsky package
+
+Head-to-head timing of the *same* quantities (s=−2, l=m=2) against the Mathematica
+`Teukolsky` paclet, on one machine, measured sequentially (one process at a time,
+warm-up excluded). The short answer: **which is faster depends on precision.**
+
+| Operation | Float64 | BigFloat-256 (≈77 digits) |
+|---|---|---|
+| ν (renormalized angular momentum) | **Julia ~90×** | Mathematica ~10× |
+| radial solution construction | **Julia ~200×** | **≈ parity** |
+| radial evaluation at a point | **Julia ~660×** | **Julia ~4.5×** |
+| point-particle energy flux | **Julia ~96×** | both correct (Julia faster) |
+
+**Float64.** Julia is overwhelmingly faster (90–660×) — though this is the least
+fair comparison: Mathematica's machine-precision MST is a self-flagged degraded mode
+(`RenormalizedAngularMomentum` warns it "only works reliably with arbitrary
+precision"), and the gap is partly Mathematica's per-call interpreter overhead against
+Julia's sub-100-µs calls.
+
+**BigFloat.** This is where Mathematica's tuned arbitrary-precision kernel is strong.
+The renormalized angular momentum ν still favours Mathematica (~10×). But radial
+**construction** is now at parity at 256-bit and Julia *overtakes* it at 512-bit
+(0.92 s vs 1.59 s, ~1.7×), and radial **evaluation** stays Julia-faster at every
+precision (~4.5× at 256-bit). Both packages agree on the energy flux to 16 digits
+(`2.684397739103742e-5` for l=m=2, a=0, p=10).
+
+Two recent fixes drove the BigFloat numbers (see git history):
+- a Pochhammer-recurrence rewrite of the `K_ν` matching coefficient cut BigFloat
+  radial construction **1.76 s → 0.53 s at 256-bit** (3.3×; 4.9× at 512-bit), since
+  it eliminates ~480 full-precision Γ evaluations per solve;
+- a gamma-free Pfaff fallback in the ₂F₁ evaluator fixed a `DomainError` that
+  previously crashed BigFloat point-particle fluxes (real-ν / low-frequency regime).
+
+**Bottom line:** Julia for fast Float64 sweeps and for evaluating already-built
+solutions; either package for high-precision construction (Julia leads at ≥512-bit,
+Mathematica leads on ν). Caveats: BigFloat-bit ↔ decimal-digit matching is nominal,
+Mathematica uses adaptive guard digits, single machine / single thread.
+
+---
+
 ## Project layout
 
 ```
