@@ -33,6 +33,12 @@ end
 _cgamma(z::Real) = real(_cgamma(complex(float(z))))
 _cgamma(z) = gamma(z)
 
+# Arb: SpecialFunctions.gamma has no Complex{Arb} method; route through Acb
+# (Arblib's native complex type), which gives full working-precision Gamma. This
+# method is strictly MORE SPECIFIC than _cgamma(::Complex{T<:AbstractFloat}) above
+# (Arb<:AbstractFloat), so the Float64/BigFloat paths are bit-identical / untouched.
+_cgamma(z::Complex{Arb}) = Complex{Arb}(SpecialFunctions.gamma(Acb(z)))
+
 # ============================================================
 #  Pochhammer symbol (a)_n = Γ(a+n)/Γ(a)
 # ============================================================

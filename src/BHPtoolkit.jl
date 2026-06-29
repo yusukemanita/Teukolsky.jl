@@ -12,6 +12,7 @@ Convention: M = 1 (black hole mass), G = c = 1.
 module BHPtoolkit
 
 using LinearAlgebra, SpecialFunctions, Printf
+using Arblib: Arb, Acb   # type names only (Arb<:AbstractFloat); see arb_compat.jl
 
 export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed
@@ -41,6 +42,7 @@ export KerrCircularOrbit, convolve_source_circular, TeukolskyPointParticleMode
 
 include("params.jl")
 include("utils.jl")
+include("arb_compat.jl")  # Acb-bridge transcendentals for Complex{Arb} (additive)
 include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
 include("pn_series.jl")   # PNSeries ring (B6)

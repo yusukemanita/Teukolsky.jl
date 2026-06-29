@@ -227,7 +227,19 @@ Solve for ν (renormalized angular momentum).
 """
 function compute_nu(s::Int, l::Int, m::Int, a, ω;
                     nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
-                    precision::Int=64, ν_init=nothing, method::String="Monodromy")
+                    precision::Int=64, ν_init=nothing, method::String="Monodromy",
+                    backend::Symbol=:bigfloat)
+    # ADDITIVE Arb backend (M1): opt-in via backend=:arb.  Must precede the
+    # precision>64 BigFloat-hijack block below.  Default :bigfloat never enters
+    # here, so the Float64/BigFloat control flow is byte-for-byte unchanged.
+    if backend === :arb
+        method == "Monodromy" || error("backend=:arb supports only method=\"Monodromy\" (M1 scope).")
+        return setprecision(Arb, precision) do
+            ωc = complex(ω)
+            _compute_nu_monodromy(s, l, m, Arb(a),
+                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
+        end
+    end
     if precision > 64
         return setprecision(BigFloat, precision) do
             compute_nu(s, l, m, BigFloat(a), Complex{BigFloat}(complex(ω));
