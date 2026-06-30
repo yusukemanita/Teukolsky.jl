@@ -170,3 +170,37 @@ end
         end
     end
 end
+
+# ============================================================
+#  High-ω regression: Acb-native Rayleigh refinement (params.jl)
+#
+#  Before the AcbMatrix/approx_solve! refinement, the generic Complex{Arb} LU
+#  inside _rayleigh_refine made undecidable ball pivot comparisons at ω≥1.5 and
+#  SILENTLY returned 0+NaN·im (or threw "matrix contains Infs or NaNs").  Both
+#  Arb backends (:arb and :acb) now route through the Acb refinement and must
+#  return finite ν matching the BigFloat path.  This is the test that would have
+#  caught the original crash; gate at 1e-25 (the ω=2 integer branch widens balls
+#  by a few digits, still far above the floor).
+# ============================================================
+const HIGHW_MODES = [
+    ( 0, 2, 0, 0.9, 1.5),
+    (-2, 2, 2, 0.9, 2.0),
+    ( 0, 2, 1, 0.7, 1.5),
+    (-2, 3, 2, 0.5, 2.0),
+]
+
+@testset "High-ω Acb λ refinement: no NaN, matches BigFloat (:arb & :acb)" begin
+    GATE_HW = 1e-25
+    for backend in (:arb, :acb)
+        for (s, l, m, a, ω) in HIGHW_MODES
+            ν, p = compute_nu(s, l, m, a, ω; precision=256, backend=backend)
+            # finiteness — the whole point (used to be 0+NaN·im / crash)
+            @test isfinite(Float64(real(ν))) && isfinite(Float64(imag(ν)))
+            ν_bf, _ = compute_nu(s, l, m, a, ω; precision=256)
+            d = Float64(setprecision(BigFloat, 256) do
+                nu_dist(Complex{BigFloat}(ν), Complex{BigFloat}(ν_bf))
+            end)
+            @test d < GATE_HW
+        end
+    end
+end

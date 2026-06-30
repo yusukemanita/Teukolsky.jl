@@ -91,6 +91,70 @@ function _rayleigh_refine(M::AbstractMatrix{Complex{R}}, μ::Complex{R},
     return μ, v
 end
 
+# ── Acb-native Rayleigh refinement (Arb working precision) ───────────────────
+# Strictly MORE SPECIFIC than the generic _rayleigh_refine above (Complex{Arb} is
+# a concrete instantiation of Complex{R}), so it is auto-selected whenever the
+# spectral matrix is Complex{Arb} — i.e. for BOTH the :arb (M1) and :acb (M2)
+# backends.  The Complex{BigFloat}/Float64 matrices keep hitting the generic
+# method, so those paths stay byte-for-byte unchanged.  Two reasons it exists:
+#   (1) ROBUSTNESS — generic partial-pivot LU on Complex{Arb} BALLS makes
+#       undecidable midpoint/ball pivot comparisons and returns NaN at high ω
+#       (e.g. ω≥1.5: `matrix contains Infs or NaNs` / 0+NaN·im).  Arblib's
+#       approx_solve! pivots on ball MIDPOINTS (a definite Float compare), so it
+#       never NaNs.  Inverse iteration needs only the solution DIRECTION (the
+#       error along v is removed by the next normalization), so discarding ball
+#       radii is exactly right here.
+#   (2) SPEED — the O(N³) inverse solve runs through Arblib's AcbMatrix LU
+#       instead of generic allocating Complex{Arb} `\`.
+function _rayleigh_refine(M::AbstractMatrix{Complex{Arb}}, μ::Complex{Arb},
+                          v::AbstractVector{Complex{Arb}}; maxiter::Int=8)
+    prec = precision(Arb)
+    N    = size(M, 1)
+    # M as an AcbMatrix, built once (M itself is iteration-invariant).
+    Amat = Arblib.AcbMatrix(N, N; prec=prec)
+    for i in 1:N, j in 1:N
+        Amat[i, j] = Acb(M[i, j]; prec=prec)
+    end
+    Ashift = Arblib.AcbMatrix(N, N; prec=prec)
+    bvec   = Arblib.AcbMatrix(N, 1; prec=prec)
+    xvec   = Arblib.AcbMatrix(N, 1; prec=prec)
+    Mv     = Arblib.AcbMatrix(N, 1; prec=prec)
+
+    v = v / norm(v)
+    for _ in 1:maxiter
+        # Ashift = M - μ I
+        for i in 1:N, j in 1:N
+            Ashift[i, j] = Amat[i, j]
+        end
+        μacb = Acb(μ; prec=prec)
+        for i in 1:N
+            Ashift[i, i] = Ashift[i, i] - μacb
+        end
+        for i in 1:N
+            bvec[i, 1] = Acb(v[i]; prec=prec)
+        end
+        # approx_solve! returns nonzero on success, 0 when (M-μI) is singular
+        # (μ hit the eigenvalue exactly → already converged).
+        flag = Arblib.approx_solve!(xvec, Ashift, bvec; prec=prec)
+        w = Complex{Arb}[Complex{Arb}(xvec[i, 1]) for i in 1:N]
+        (flag == 0 || any(!isfinite, w)) && break
+        v = w / norm(w)
+        # Rayleigh quotient μ_new = v'(Mv); Mv via the Acb matrix (no generic
+        # Complex{Arb} matmul allocation).
+        for i in 1:N
+            bvec[i, 1] = Acb(v[i]; prec=prec)
+        end
+        Arblib.mul!(Mv, Amat, bvec; prec=prec)
+        μ_new = zero(Complex{Arb})
+        for i in 1:N
+            μ_new += conj(v[i]) * Complex{Arb}(Mv[i, 1])
+        end
+        Δ = abs(μ_new - μ); μ = μ_new
+        Δ ≤ 4*eps(Arb)*abs(μ) && break
+    end
+    return μ, v
+end
+
 """
     _swsh_eigen(s, l, m, a, ω; l_max=20) -> (λ, ells, C)
 
