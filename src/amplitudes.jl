@@ -109,6 +109,10 @@ Wolfram Teukolsky package convention. The physical Green's function is then simp
 `G = Rin(r) / (2iω × Binc)`.
 
 `method` is passed to `compute_nu`: `"Monodromy"` (default) or `"Newton"`.
+
+`backend` selects the working precision: `:float64`, `:bigfloat`, `:multifloat`,
+`:arb`, or `:acb` (Arb ball arithmetic at `precision` bits; for amplitudes `:arb`
+and `:acb` are equivalent). Default `:auto` leaves the inputs untouched.
 """
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
                             nmax::Int=80, nmax_cf::Int=150, ν_init=nothing,

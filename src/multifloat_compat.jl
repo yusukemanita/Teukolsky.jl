@@ -93,6 +93,8 @@ Convert `(a, ω)` to the working float type selected by `backend` and call
   - `:float64`    → `Float64` / `ComplexF64` (`precision` ignored)
   - `:bigfloat`   → `BigFloat` at `precision` bits (run inside `setprecision`)
   - `:multifloat` → `Float64xN`, `N` from [`_multifloat_type`](@ref)
+  - `:arb`        → `Arb` ball arithmetic at `precision` bits (run inside `setprecision`)
+  - `:acb`        → equivalent to `:arb` for amplitudes (`Complex{Arb}` pipeline)
 
 This is the single dispatch point shared by `compute_nu` and `compute_amplitudes`.
 """
@@ -108,8 +110,17 @@ function _with_backend(f, backend::Symbol, precision::Int, a, ω)
     elseif backend === :multifloat
         R = _multifloat_type(precision)
         return f(R(real(a)), Complex{R}(R(real(ωc)), R(imag(ωc))))
+    elseif backend === :arb || backend === :acb
+        # Arb ball arithmetic at precision bits.  The amplitude/radial pipeline
+        # runs entirely in Complex{Arb}, so :arb and :acb are EQUIVALENT here (the
+        # native-Acb kernel only accelerates the standalone nu solver via
+        # compute_nu(...; backend=:acb)); both are accepted for keyword parity.
+        return setprecision(Arb, precision) do
+            f(Arb(real(a)),
+              Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
+        end
     else
         error("_with_backend: unknown backend $(repr(backend)); " *
-              "use :float64, :bigfloat, or :multifloat")
+              "use :float64, :bigfloat, :multifloat, :arb, or :acb")
     end
 end

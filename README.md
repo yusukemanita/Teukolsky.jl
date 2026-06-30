@@ -80,6 +80,29 @@ setprecision(BigFloat, 256) do
 end
 ```
 
+### Selectable precision backends
+
+Both `compute_nu` and `compute_amplitudes` accept a `backend` (a `Symbol`) keyword together with `precision` (an `Int`, in bits) that selects the working float type, as an alternative to passing typed arguments inside `setprecision`.
+
+| backend | working type | notes |
+|---------|--------------|-------|
+| `:float64` | `Float64` | fast double precision |
+| `:bigfloat` | `BigFloat` at `precision` bits | default arbitrary precision |
+| `:multifloat` | `Float64xN` (`N` from `precision/53`) | extended mantissa, `Float64` exponent range |
+| `:arb` | `Arb` ball at `precision` bits | rigorous ball arithmetic |
+| `:acb` | native-`Acb` nu-solver kernel | fast nu solver; for amplitudes equivalent to `:arb` |
+
+```julia
+using BHPtoolkit
+compute_nu(-2, 2, 2, 0.0, 0.5; backend=:multifloat, precision=256)
+compute_nu(-2, 2, 2, 0.0, 0.5; backend=:arb, precision=256)
+compute_nu(-2, 2, 2, 0.0, 0.5; backend=:acb, precision=256)   # fast native-Acb nu
+amp = compute_amplitudes(-2, 2, 2, 0.0, 0.5; backend=:arb, precision=256)
+amp = compute_amplitudes(-2, 2, 2, 0.0, 0.5; backend=:multifloat, precision=256)
+```
+
+The Arb backend was validated at large complex frequency (see `examples/arb_validation/`), agreeing with the BigFloat path to 50–74 digits across `|omega|` in `{2, 10}`, with high-`|omega|` conditioning recovered by raising precision.
+
 ### Spin-weighted spheroidal harmonics
 
 ```julia
