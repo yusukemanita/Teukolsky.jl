@@ -60,6 +60,38 @@ function _cgamma(z::Complex{MultiFloat{T,N}}) where {T,N}
     end
 end
 
+# ── (3b) Γ and log-Γ at MultiFloat precision (radial ₂F₁ connection formula) ──
+# HypergeometricFunctions._₂F₁ (used by the radial Rin/Rup series) evaluates
+# `gamma`/`loggamma` on BOTH real and complex parameters; SpecialFunctions has no
+# MultiFloat method, so Rin dies with `_gamma`/`_loggamma(::(Complex){MultiFloat})`.
+# Route each through BigFloat at the working precision (mirrors `_cgamma` above
+# and the Arb bridges); these appear O(1) times per radial evaluation, so the
+# BigFloat detour is negligible against the native-MultiFloat series arithmetic.
+for G in (:gamma, :loggamma)
+    @eval function SpecialFunctions.$G(x::MultiFloat{T,N}) where {T,N}
+        MF = MultiFloat{T,N}; p = precision(MF) + 10
+        return MF(setprecision(() -> SpecialFunctions.$G(BigFloat(x; precision=p)),
+                               BigFloat, p))
+    end
+    @eval function SpecialFunctions.$G(z::Complex{MultiFloat{T,N}}) where {T,N}
+        MF = MultiFloat{T,N}; p = precision(MF) + 10
+        return setprecision(BigFloat, p) do
+            g = SpecialFunctions.$G(Complex{BigFloat}(BigFloat(real(z); precision=p),
+                                                      BigFloat(imag(z); precision=p)))
+            Complex{MF}(MF(real(g)), MF(imag(g)))
+        end
+    end
+end
+
+# ── (4) Integer conversion of a MultiFloat ───────────────────────────────────
+# MultiFloats provides round/ceil/floor/trunc (each returning a MultiFloat) but
+# NOT the Integer conversion of the result, so `round(Int, ::MultiFloat)` — used
+# in the radial hypergeometric path (the near-integer-b guard in
+# hypergeometric.jl) — hits a missing `Int64(::MultiFloat)` and the radial Rin/Rup
+# fail under the MultiFloat backend.  Route through the leading Float64 limb,
+# which is exact for the small integer-valued arguments these call sites produce.
+(::Type{I})(x::MultiFloat) where {I<:Integer} = I(Float64(x))
+
 # ============================================================
 #  Precision-backend dispatch  (Float64 / BigFloat / MultiFloat)
 # ============================================================

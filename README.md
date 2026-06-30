@@ -240,6 +240,68 @@ solutions; either package for high-precision construction (Julia leads at ≥512
 Mathematica leads on ν). Caveats: BigFloat-bit ↔ decimal-digit matching is nominal,
 Mathematica uses adaptive guard digits, single machine / single thread.
 
+### Backend performance (Binc, Bref, Rin, Rup)
+
+Cross-backend timing on Schwarzschild (`a=0`, `s=−2`, `l=m=2`, `nmax=80`, radial
+evaluated at `r=10`), Julia 1.12.3, reported as the **minimum of 8 `@elapsed`
+runs** with warm-up and GC excluded, in a single process (timings not skewed by
+contention). The `ν` solver lists all five backends because `:arb` and `:acb`
+genuinely differ there; for the amplitudes and radial functions `:arb` and `:acb`
+run the *identical* `Complex{Arb}` path, so they share one **Arb/Acb** row.
+
+**ω = 0.1** — `ν` solver (`compute_nu`):
+
+| Float64 | BigFloat-256 | MultiFloat-x4 | Arb-256 | Acb-256 |
+|---|---|---|---|---|
+| 52.5 µs | 34.6 ms | 27.6 ms | 106 ms | **4.6 ms** |
+
+amplitudes & radial:
+
+| Backend | Binc/Bref | Rin | Rup |
+|---|---|---|---|
+| Float64 | 779 µs | 63.0 µs | 205 µs |
+| BigFloat-256 | 353 ms | 89.3 ms | 68.8 ms |
+| MultiFloat-x4 | 118 ms | 58.7 ms | 33.7 ms |
+| Arb/Acb-256 | 501 ms | 12.1 ms | 42.1 ms |
+
+**ω = 10** — `ν` solver (`compute_nu`):
+
+| Float64 | BigFloat-256 | MultiFloat-x4 | Arb-256 | Acb-256 |
+|---|---|---|---|---|
+| 60.5 µs | 67.2 ms | 55.5 ms | 111 ms | **5.5 ms** |
+
+amplitudes & radial:
+
+| Backend | Binc/Bref | Rin | Rup |
+|---|---|---|---|
+| Float64 | 1.25 ms | 146 µs | 943 µs |
+| BigFloat-256 | 887 ms | 366 ms | 1.16 s |
+| MultiFloat-x4 | 269 ms | 241 ms | 1.04 s |
+| Arb/Acb-256 | 978 ms | 54.3 ms | 246 ms |
+
+**Takeaways:**
+- **Float64** is the fast baseline — 100–1000× ahead of any arbitrary-precision
+  backend (tens-of-µs `ν`, sub-ms amplitudes/radial).
+- **`Acb` is by far the fastest `ν` solver**: its native in-place monodromy kernel
+  beats the generic **`Arb`** path by ~23× at ω=0.1 (106 → 4.6 ms) and ~20× at
+  ω=10 (111 → 5.5 ms), and `BigFloat` by ~7× and ~12×. The generic `Arb` `ν` is
+  the *slowest* backend — ball arithmetic heap-boxes every operation, which is
+  exactly the overhead the `Acb` kernel removes.
+- `:arb` and `:acb` are the **same code** for `Binc`/`Bref`/`Rin`/`Rup` (the
+  native-Acb advantage is specific to `compute_nu`), hence the single `Arb/Acb`
+  row. Among the high-precision backends, **`Arb/Acb` has the fastest radial `Rin`**
+  (12 ms vs `BigFloat` 89 ms at ω=0.1), while **`MultiFloat` is fastest for the
+  amplitudes** — but see the precision caveat.
+- **Caveats.** `MultiFloat` caps at `Float64x4` (~212 bits ≈ 63 digits), *below*
+  the genuine 256-bit (~77-digit) `BigFloat`/`Arb`/`Acb` columns, so part of its
+  amplitude-speed lead is a lower-precision artefact. Its radial `Rin`/`Rup` only
+  *run* after Γ/log-Γ + Integer shims (in `src/multifloat_compat.jl`), and the
+  `₂F₁` connection formula leaves them only ~`Float64`-accurate (≈16 digits) — use
+  `Arb`/`BigFloat` for high-precision radial values. Radial timings at ω=10 use
+  `nmax=80` (timing only; accuracy at high \|ω\| needs more radial terms).
+- Cost grows from ω=0.1 to ω=10 (more recurrence/hypergeometric terms); `Rup` is
+  the hardest-hit — `BigFloat`/`MultiFloat` balloon to ~1 s.
+
 ---
 
 ## Project layout
