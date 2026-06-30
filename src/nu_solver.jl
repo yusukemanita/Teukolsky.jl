@@ -705,23 +705,48 @@ end
 """
     _monodromy_adaptive_acb(s, l, m, a, ω, λ; prec=precision(Arb), nmax0=60)
 
-Native-Acb analogue of `_monodromy_adaptive` (R = Arb): identical adaptive driver
-(nmax clamp, verify value@nmax vs value@(nmax−Δ) to ~16·eps(Arb), extend & recheck
-if needed), with the inner monodromy value supplied by the Acb kernel.  Returns
-`Complex{Arb}`.
+Native-Acb analogue of `_monodromy_adaptive`, with one Acb-specific fix that
+avoids a ~7× wasted-work trap:
+
+  MIDPOINT convergence.  The BigFloat driver stops when `|c−clo| ≤ 16·eps·|c|`.
+  On Arb that LHS is a BALL whose radius (~2^(−0.28·prec), from the accumulating
+  products) is orders of magnitude larger than 16·eps·|c|, so the rigorous `≤`
+  is NEVER satisfiable and the driver would extend to the 4000 safety cap on
+  EVERY call.  The series MIDPOINT — the value every downstream consumer and the
+  BigFloat cross-check actually use — converges long before the radius matters,
+  so we compare midpoints (in BigFloat at the working precision) to
+  ~2^(−0.85·prec).  This makes the driver terminate at the true convergence
+  point (≈ the 4.71·prec start for normal modes) instead of churning to 4000.
+
+The starting `nmax` is kept at the proven 4.71·prec floor — the series
+convergence requirement scales with the MODE (≈ |ε|, l), not precision, so a
+precision-only lower start (e.g. 2·prec) under-truncates high-ω modes; the
+4.71·prec floor is what the BigFloat path already uses successfully across the
+mode grid.  The verify-and-extend loop (now able to terminate, thanks to the
+midpoint test) is the backstop for any extreme mode that needs more.
+
+Returns `Complex{Arb}`.
 """
 function _monodromy_adaptive_acb(s::Int, l::Int, m::Int, a, ω, λ;
                                  prec::Int=precision(Arb), nmax0::Int=60)
-    tol  = 16 * eps(Arb)
     Δ    = 128
     nmax = clamp(ceil(Int, 4.71 * prec), max(nmax0, 120) + Δ, 4000)
 
+    # Midpoint-relative convergence: |mid(c)−mid(clo)| ≤ 2^(−0.85·prec)·|mid(c)|.
+    # 0.85·prec leaves margin above the achievable midpoint-agreement floor (so
+    # the test triggers) and far below the ν gate (so accuracy stays ≳0.8·prec
+    # digits — validated against the BigFloat path across the mode grid).
+    converged(c1, c2) = setprecision(BigFloat, prec) do
+        m1 = Complex{BigFloat}(c1); m2 = Complex{BigFloat}(c2)
+        abs(m1 - m2) ≤ ldexp(one(BigFloat), -fld(17 * prec, 20)) * abs(m1)
+    end
+
     ctx = _build_monodromy_ctx_acb(s, l, m, a, ω, λ, nmax; prec=prec)
     c   = _monodromy_value_acb(ctx, nmax; prec=prec)
-    for _ in 1:32
+    for _ in 1:24
         nlo = max(nmax0, nmax - Δ)
         clo = _monodromy_value_acb(ctx, nlo; prec=prec)
-        abs(c - clo) ≤ tol * abs(c) && return c
+        converged(c, clo) && return c
         nmax ≥ 4000 && return c                  # safety cap: best effort
         nmax = min(nmax + 2Δ, 4000)
         _extend_monodromy_ctx_acb!(ctx, nmax; prec=prec)
