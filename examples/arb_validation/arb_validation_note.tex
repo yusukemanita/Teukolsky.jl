@@ -1,0 +1,210 @@
+% !TEX program = pdflatex
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{pdftitle={Validating the Arb backend of the MST solver}}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage[margin=2.5cm]{geometry}
+
+\graphicspath{{../../figures/}}
+
+% NOTE: run  julia --project=. examples/arb_validation/arb_amplitude_validation.jl
+% to (re)generate the figures before compiling this document.
+
+\title{Validating the Arb (ball-arithmetic) backend of the MST solver\\
+\large $B^{\mathrm{inc}}$, $B^{\mathrm{ref}}$, $R^{\mathrm{in}}$, $R^{\mathrm{up}}$
+at large complex frequency}
+\author{}
+\date{\today}
+
+\newcommand{\Binc}{B^{\mathrm{inc}}}
+\newcommand{\Bref}{B^{\mathrm{ref}}}
+\newcommand{\Rin}{R^{\mathrm{in}}}
+\newcommand{\Rup}{R^{\mathrm{up}}}
+\newcommand{\eps}{\epsilon}
+\newcommand{\Acb}{\texttt{Acb}}
+\newcommand{\Arb}{\texttt{Arb}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We validate the arbitrary-precision \emph{ball-arithmetic} (Arb) backend of our
+Julia MST (Mano--Suzuki--Takasugi) solver for the homogeneous Teukolsky equation,
+computing the incidence/reflection amplitudes $\Binc,\Bref$ and the radial
+solutions $\Rin,\Rup$ at large complex frequency
+$\omega=|\omega|\,e^{i\theta}$, with $|\omega|\in\{2,10\}$ and
+$\theta\in[0^\circ,90^\circ)$.  Because Mathematica's \textsf{Teukolsky} package
+returns \texttt{Indeterminate} for these quantities at any complex $\omega$, the
+requested 100-digit cross-check is infeasible there; we instead validate by
+\emph{self-consistency} against the library's independent \textsf{BigFloat}
+(MPFR) backend at matched precision, supplemented by the reference-free Wronskian
+identity for the radial pair.  The Arb amplitudes agree with the BigFloat
+reference to $50$--$74$ digits across the whole frequency sweep, with isolated
+ill-conditioned angles whose accuracy is recovered \emph{linearly} by raising the
+working precision --- the signature of a correct but ill-conditioned computation.
+\end{abstract}
+
+\section{The MST quantities}
+
+The radial Teukolsky function $R_{s\ell m\omega}(r)$ obeys
+\begin{equation}
+  \Delta^{-s}\frac{d}{dr}\!\Big(\Delta^{s+1}\frac{dR}{dr}\Big)
+  +\Big(\frac{K^2-2is(r-M)K}{\Delta}+4is\omega r-\lambda\Big)R=0,
+  \qquad \Delta=r^2-2Mr+a^2,
+\end{equation}
+with $K=(r^2+a^2)\omega-ma$ and $\lambda$ the spin-weighted spheroidal eigenvalue.
+The MST method expands the two physical solutions in series of hypergeometric
+($\Rin$, near horizon) and Coulomb-wave ($\Rup$, near infinity) functions whose
+coefficients $f^\nu_n$ satisfy a three-term recurrence,
+\begin{equation}
+  \alpha^\nu_n f^\nu_{n+1}+\beta^\nu_n f^\nu_n+\gamma^\nu_n f^\nu_{n-1}=0,
+  \label{eq:rec}
+\end{equation}
+solved by the minimal solution obtained from the two tail continued fractions
+$R_n=f_n/f_{n-1}$, $L_n=f_n/f_{n+1}$.  The series converges only for the
+\emph{renormalized angular momentum} $\nu$, fixed here from the monodromy of the
+confluent Heun equation,
+\begin{equation}
+  \cos(2\pi\nu)=\cos\!\big(\pi(\mu_1-\mu_2)\big)
+  +\frac{2\pi^2}{\Sigma_1\,\Sigma_2}\,(-1)^{n-1}a^{(1)}_{n+1}a^{(2)}_{n+1},
+  \qquad
+  \nu=\ell-\frac{\arccos\cos(2\pi\nu)}{2\pi},
+  \label{eq:mono}
+\end{equation}
+the $\Sigma_i$ being truncated sums of the monodromy recurrence
+$a^{(i)}_n$.  The asymptotic amplitudes follow from the matching coefficients
+$K_\nu$ and the factors $A^\nu_\pm$ (Sasaki--Tagoshi 2003, Eqs.~157--170):
+\begin{align}
+  \Binc&=\omega^{-1}\Big(K_\nu-i\,e^{-i\pi\nu}
+        \tfrac{\sin\pi(\nu-s+i\eps)}{\sin\pi(\nu+s-i\eps)}K_{-\nu-1}\Big)
+        A^\nu_+\,e^{-i(\eps\ln\eps-\frac{1-\kappa}{2}\eps)},\\
+  \Bref&=\omega^{-1-2s}\big(K_\nu+i\,e^{i\pi\nu}K_{-\nu-1}\big)
+        A^\nu_-\,e^{+i(\eps\ln\eps-\frac{1-\kappa}{2}\eps)},
+\end{align}
+with $\eps=2M\omega$, normalised by $B^{\mathrm{trans}}$.  Any two homogeneous
+solutions satisfy the $r$-independent Wronskian
+\begin{equation}
+  W=\Delta^{s+1}\big(\Rin\,(\Rup)'-(\Rin)'\,\Rup\big)=\text{const},
+  \label{eq:wron}
+\end{equation}
+which gives a \emph{reference-free} test: $|W(r_1)-W(r_2)|/|W|$ measures how well
+the truncated series actually solves the equation.
+
+\section{The Arb backend and the choice of reference}
+
+The solver is generic over the floating type: \texttt{Float64},
+\texttt{BigFloat} (MPFR), and Arb's ball types \Arb/\Acb\ (via
+\texttt{Arblib.jl}).  Ball arithmetic carries a rigorous error radius with every
+value.  Two facts shape the validation.
+
+\paragraph{No external reference at complex $\omega$.}
+Mathematica's \textsf{Teukolsky} package returns \texttt{Indeterminate} for
+$\Binc,\Bref,\Rin,\Rup$ whenever $\operatorname{Im}\omega\neq0$ (it resolves only
+$\nu$, to $\sim15$ digits).  The literal ``compare against Mathematica at $100$
+digits'' is therefore impossible for the complex frequencies of interest.  We
+adopt instead a self-consistency reference: the library's BigFloat backend at the
+\emph{same} working precision.  Arb and BigFloat share no arithmetic kernels, so
+their agreement to working precision certifies the Arb code path (type dispatch,
+the special-function bridges, the continued-fraction and monodromy kernels).
+
+\paragraph{Midpoint philosophy.}
+At large $|\omega|$ the MST closed forms~\eqref{eq:mono} suffer heavy
+cancellation.  Propagated through ball arithmetic, the \emph{certified radius}
+grows until it can exceed the midpoint magnitude, and the rigorous comparisons
+that drive convergence tests become undecidable.  Following the existing
+monodromy driver, we treat converged values as point estimates: ball radii are
+stripped at the decision points, and the recurrences~\eqref{eq:rec},
+\eqref{eq:mono} are run in \emph{point arithmetic} (midpoints computed exactly to
+the working precision, exactly as MPFR), so the Arb midpoints track BigFloat.
+The bridges required for \texttt{Complex\{Arb\}} to traverse the generic stack are:
+$\log$, $\arccos$ (with a NaN guard for $|z|\gtrsim10^{40}$), $\sqrt{\cdot}$,
+\texttt{complex(::Acb)} for the \texttt{Arb/Complex\{Arb\}}$\to$\Acb\ promotion,
+and \texttt{loggamma} for the radial ${}_2F_1$; plus a point-arithmetic
+continued-fraction and monodromy recurrence.  All are strict no-ops for
+\texttt{Float64}/\texttt{BigFloat}.
+
+\section{Results}
+
+\paragraph{Amplitude agreement across the $\theta$ sweep.}
+Figures~\ref{fig:w2} and~\ref{fig:w10} show the number of digits to which the Arb
+$\Binc,\Bref$ agree with the BigFloat reference at $256$-bit precision, as
+$\theta$ runs from $0^\circ$ to $89.99^\circ$.  At $|\omega|=2$ the agreement is a
+flat $50$--$74$ digits for both Schwarzschild and Kerr.  At $|\omega|=10$ most
+angles still agree to $60$--$74$ digits; a few ill-conditioned angles drop lower
+(e.g.\ Kerr $a=0.9$, $\theta=60^\circ$: $\sim7$ digits).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.78\textwidth]{arb_amp_agreement_w2.pdf}
+  \caption{Arb-vs-BigFloat agreement (digits) for $\Binc,\Bref$ at $|\omega|=2$,
+  $s=-2$, $\ell=m=2$, $256$-bit.  Flat $50$--$74$ digit agreement over the whole
+  $\theta$ sweep.}
+  \label{fig:w2}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.78\textwidth]{arb_amp_agreement_w10.pdf}
+  \caption{As Fig.~\ref{fig:w2} but at $|\omega|=10$.  Most angles agree to
+  $60$--$74$ digits; isolated angles are ill-conditioned (see
+  Fig.~\ref{fig:recovery}).}
+  \label{fig:w10}
+\end{figure}
+
+\paragraph{Precision recovery.}
+The low-digit angles are not errors: the cancellation costs a \emph{constant}
+number of bits, independent of the working precision.  Figure~\ref{fig:recovery}
+shows that for the worst case (Kerr $\theta=60^\circ$, $|\omega|=10$) the
+agreement grows linearly --- $7\to84\to238$ digits at $256\to512\to1024$ bits ---
+a fixed $\sim230$-bit conditioning loss.  The Schwarzschild $\theta=45^\circ$ case
+loses only $\sim25$ bits.  This linear recovery is the signature of a correct but
+ill-conditioned computation: to obtain $D$ correct digits at a given mode, use a
+working precision exceeding the conditioning loss by $\sim3.3D$ bits.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\textwidth]{arb_amp_precision_recovery.pdf}
+  \caption{$\Binc$ agreement vs working precision at $|\omega|=10$.  The constant
+  vertical gap to the diagonal (full precision) is the conditioning loss: small
+  for Schwarzschild $\theta=45^\circ$, $\sim230$ bits for Kerr $\theta=60^\circ$.}
+  \label{fig:recovery}
+\end{figure}
+
+\paragraph{Radial Wronskian.}
+Figure~\ref{fig:wron} tests the radial pair via~\eqref{eq:wron}.  At $|\omega|=0.5$
+the Arb solutions are self-consistent to $\gtrsim50$ digits once the radial
+truncation $n_{\max}$ is large enough.  At $|\omega|\geq2$ the radial series needs
+$n_{\max}\!\propto\!|\omega|$ to converge; the BigFloat path then reaches
+$10^{-22}$ ($n_{\max}=240$) and $10^{-46}$ ($n_{\max}=320$), confirming the
+\emph{formalism} converges, whereas the Arb path plateaus near $10^{11}$ because
+the external hypergeometric (${}_2F_1$) evaluation is carried out in ball
+arithmetic and is conditioning-limited there.  Point-arithmetic ${}_2F_1$ for the
+Arb radial functions at $|\omega|\geq2$ is the natural next step.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.80\textwidth]{arb_radial_wronskian_nmax.pdf}
+  \caption{Radial Wronskian self-consistency $|W(8)-W(20)|/|W|$ vs $n_{\max}$
+  (256-bit).  Solid: Arb; dashed: BigFloat.  Arb converges at $|\omega|=0.5$; at
+  $|\omega|=2$ the BigFloat formalism converges while the Arb ${}_2F_1$ path is
+  conditioning-limited.}
+  \label{fig:wron}
+\end{figure}
+
+\section{Conclusion}
+
+The Arb backend computes $\Binc,\Bref$ correctly at large complex frequency,
+matching the independent BigFloat path to $50$--$74$ digits across
+$|\omega|\in\{2,10\}$ and the full $\theta$ sweep, with the only shortfalls being
+isolated ill-conditioned angles whose accuracy is fully recovered by raising the
+working precision.  The radial solutions $\Rin,\Rup$ are validated at low
+$|\omega|$ via the reference-free Wronskian; at $|\omega|\geq2$ they are limited
+by the ball-arithmetic hypergeometric evaluation, not by the MST formalism, which
+the BigFloat reference confirms still converges.  All Arb-specific code is purely
+additive: the \texttt{Float64}/\texttt{BigFloat} paths are byte-for-byte
+unchanged and the full test suite passes.
+
+\end{document}
