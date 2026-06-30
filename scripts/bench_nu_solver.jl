@@ -77,8 +77,9 @@ end
 # ------------------------------------------------------------------
 # Acb-256 native in-place kernel (M2) vs BigFloat-256: same protocol,
 # plus ratio BF256/Acb256.  The native-Acb monodromy recurrence removes the
-# per-op heap boxes that cap M1 at ~2x; measured ~6-7x here.  (Residual cost
-# is now the λ/Rayleigh path in params.jl, still Complex{Arb} — the next target.)
+# per-op heap boxes that cap M1 at ~2x, AND the adaptive driver now stops at the
+# true convergence point (midpoint test) instead of churning to the 4000 cap —
+# together ~20-48x over BigFloat (Schw ~48x, Kerr ~32x at 256-bit).
 # ------------------------------------------------------------------
 println()
 println("# Acb-256 native kernel vs BigFloat-256  (backend=:acb), min-of-N @elapsed")
