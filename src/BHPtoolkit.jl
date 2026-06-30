@@ -14,6 +14,7 @@ module BHPtoolkit
 using LinearAlgebra, SpecialFunctions, Printf
 using Arblib: Arb, Acb   # type names only (Arb<:AbstractFloat); see arb_compat.jl
 import Arblib            # qualified Arblib.<fn>! for the native-Acb kernel (M2)
+import MultiFloats       # MultiFloat{Float64,N} precision backend; see multifloat_compat.jl
 
 export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed
@@ -44,6 +45,7 @@ export KerrCircularOrbit, convolve_source_circular, TeukolskyPointParticleMode
 include("params.jl")
 include("utils.jl")
 include("arb_compat.jl")  # Acb-bridge transcendentals for Complex{Arb} (additive)
+include("multifloat_compat.jl")  # MultiFloat shims + precision-backend dispatch (additive)
 include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
 include("pn_series.jl")   # PNSeries ring (B6)
@@ -67,5 +69,13 @@ include("waveform.jl")
 
 using .Waveform
 export WaveformParams, compute_waveform, green_function
+
+function __init__()
+    # Enable MultiFloats' BigFloat-fallback for real transcendentals (sin, cos,
+    # 1-arg atan, …); MultiFloat arithmetic stays native.  Must run at load time
+    # (the fallback `eval`s Base methods), not precompile.  See multifloat_compat.jl.
+    _enable_multifloat_transcendentals()
+    return nothing
+end
 
 end  # module BHPtoolkit

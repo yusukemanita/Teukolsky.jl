@@ -152,6 +152,24 @@ function _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0::Int=60)
     if R === Float64 || R === Float32
         return monodromy_cos2pi_nu(s, l, m, a, ω, λ; nmax=nmax0)
     end
+    if R <: MultiFloats.MultiFloat
+        # MultiFloat extends the MANTISSA but keeps Float64's EXPONENT range, so
+        # the deep monodromy series (factorial/Pochhammer products at
+        # nmax ≈ 4.71·prec) overflows to Inf/NaN exactly as Float64 does.  Run the
+        # single scalar cos(2πν) series in BigFloat at the MultiFloat working
+        # precision and convert back — the rest of the MST pipeline (f_n
+        # recurrence, amplitude sums) stays native MultiFloat.
+        prec = precision(R)
+        ωc   = complex(ω)
+        cbig = setprecision(BigFloat, prec) do
+            _monodromy_adaptive(s, l, m,
+                BigFloat(real(a)),
+                Complex{BigFloat}(BigFloat(real(ωc)), BigFloat(imag(ωc))),
+                Complex{BigFloat}(BigFloat(real(λ)), BigFloat(imag(λ)));
+                R=BigFloat, nmax0=nmax0)
+        end
+        return Complex{R}(R(real(cbig)), R(imag(cbig)))
+    end
     tol  = 16 * eps(R)
     # Series length needed for |Δcos(2πν)| ≲ 16·eps(R): empirically the number
     # of correct decimal digits grows as ~12.7 + 0.064·nmax, so reaching
@@ -229,6 +247,21 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
                     nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
                     precision::Int=64, ν_init=nothing, method::String="Monodromy",
                     backend::Symbol=:bigfloat)
+    # ADDITIVE precision-type backends (opt-in): :float64 and :multifloat convert
+    # the inputs to the chosen working float type and recurse through the generic
+    # path (backend=:bigfloat + precision=64, so neither the :arb/:acb blocks nor
+    # the BigFloat-hijack below re-fire).  The code is generic over
+    # R<:AbstractFloat, so the MultiFloat type then flows everywhere, with the
+    # multifloat_compat.jl shims supplying Γ and the 2-arg atan.  The default
+    # :bigfloat path is byte-for-byte unchanged.
+    if backend === :float64 || backend === :multifloat
+        return _with_backend(backend, precision, a, ω) do a_w, ω_w
+            compute_nu(s, l, m, a_w, ω_w;
+                       nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64,
+                       ν_init = ν_init === nothing ? nothing : complex(ν_init),
+                       method=method, backend=:bigfloat)
+        end
+    end
     # ADDITIVE Arb backend (M1): opt-in via backend=:arb.  Must precede the
     # precision>64 BigFloat-hijack block below.  Default :bigfloat never enters
     # here, so the Float64/BigFloat control flow is byte-for-byte unchanged.

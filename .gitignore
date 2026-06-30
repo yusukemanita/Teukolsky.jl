@@ -41,3 +41,9 @@ Manifest.toml
 
 # OS
 .DS_Store
+
+# LaTeX build artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
