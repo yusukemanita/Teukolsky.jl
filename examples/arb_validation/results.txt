@@ -1,0 +1,88 @@
+========================================================================
+Arb vs BigFloat MST amplitudes — agreement digits (s=-2, l=m=2, 256-bit)
+θ sweep: ω = |ω|·e^{iθ}, |ω| ∈ {2, 10}
+========================================================================
+
+|ω| = 2
+  Schwarzschild a=0:
+    θ=  0.00°   Binc:  72.4 digits   Bref:  72.4 digits
+    θ= 10.00°   Binc:  72.9 digits   Bref:  72.5 digits
+    θ= 20.00°   Binc:  57.3 digits   Bref:  57.2 digits
+    θ= 30.00°   Binc:  72.7 digits   Bref:  72.7 digits
+    θ= 40.00°   Binc:  71.4 digits   Bref:  71.4 digits
+    θ= 50.00°   Binc:  61.4 digits   Bref:  61.4 digits
+    θ= 60.00°   Binc:  64.4 digits   Bref:  64.4 digits
+    θ= 70.00°   Binc:  72.1 digits   Bref:  72.1 digits
+    θ= 80.00°   Binc:  72.1 digits   Bref:  72.1 digits
+    θ= 89.99°   Binc:  69.4 digits   Bref:  68.3 digits
+  Kerr a=0.9:
+    θ=  0.00°   Binc:  72.8 digits   Bref:  72.4 digits
+    θ= 10.00°   Binc:  50.8 digits   Bref:  50.4 digits
+    θ= 20.00°   Binc:  50.9 digits   Bref:  50.3 digits
+    θ= 30.00°   Binc:  73.6 digits   Bref:  73.0 digits
+    θ= 40.00°   Binc:  73.3 digits   Bref:  72.7 digits
+    θ= 50.00°   Binc:  56.8 digits   Bref:  56.0 digits
+    θ= 60.00°   Binc:  73.0 digits   Bref:  72.1 digits
+    θ= 70.00°   Binc:  73.0 digits   Bref:  71.2 digits
+    θ= 80.00°   Binc:  70.4 digits   Bref:  69.5 digits
+    θ= 89.99°   Binc:  70.4 digits   Bref:  69.9 digits
+
+|ω| = 10
+  Schwarzschild a=0:
+    θ=  0.00°   Binc:  73.0 digits   Bref:  60.0 digits
+    θ= 10.00°   Binc:  71.5 digits   Bref:  64.0 digits
+    θ= 20.00°   Binc:  70.3 digits   Bref:  65.6 digits
+    θ= 30.00°   Binc:  70.9 digits   Bref:  68.6 digits
+    θ= 40.00°   Binc:  67.8 digits   Bref:  67.9 digits
+    θ= 50.00°   Binc:  69.4 digits   Bref:  69.0 digits
+    θ= 60.00°   Binc:  66.8 digits   Bref:  65.5 digits
+    θ= 70.00°   Binc:  34.6 digits   Bref:  31.6 digits
+    θ= 80.00°   Binc:  47.3 digits   Bref:  47.2 digits
+    θ= 89.99°   Binc:  49.1 digits   Bref:  48.2 digits
+  Kerr a=0.9:
+    θ=  0.00°   Binc:  74.4 digits   Bref:  65.6 digits
+    θ= 10.00°   Binc:  73.4 digits   Bref:  67.5 digits
+    θ= 20.00°   Binc:  70.0 digits   Bref:  67.7 digits
+    θ= 30.00°   Binc:  71.4 digits   Bref:  69.1 digits
+    θ= 40.00°   Binc:  69.2 digits   Bref:  66.9 digits
+    θ= 50.00°   Binc:  67.6 digits   Bref:  64.9 digits
+    θ= 60.00°   Binc:   7.1 digits   Bref:   3.8 digits
+    θ= 70.00°   Binc:  67.1 digits   Bref:  60.4 digits
+    θ= 80.00°   Binc:  62.4 digits   Bref:  58.6 digits
+    θ= 89.99°   Binc:  54.3 digits   Bref:  52.5 digits
+
+========================================================================
+Precision recovery at |ω| = 10, θ = 45° (Schw) / 60° (Kerr)
+========================================================================
+  Schwarzschild a=0, θ=45°:
+    prec=  256 bits   Binc:   69.9 digits   (conditioning loss ≈   24 bits)
+    prec=  512 bits   Binc:  146.8 digits   (conditioning loss ≈   24 bits)
+    prec= 1024 bits   Binc:  290.9 digits   (conditioning loss ≈   58 bits)
+  Kerr a=0.9, θ=60°:
+    prec=  256 bits   Binc:    7.1 digits   (conditioning loss ≈  233 bits)
+    prec=  512 bits   Binc:   84.1 digits   (conditioning loss ≈  232 bits)
+    prec= 1024 bits   Binc:  238.0 digits   (conditioning loss ≈  233 bits)
+
+========================================================================
+Radial Wronskian self-consistency |W(8)-W(20)|/|W|  vs nmax (256-bit)
+Arb (solid) vs BigFloat (dashed) — the formalism converges (BigFloat);
+at |ω|≥2 the Arb hypergeometric (2F1) ball path is conditioning-limited.
+========================================================================
+  Schw |ω|=0.5:
+    nmax=  80   Arb rel-dev = 4.868e-12   BigFloat rel-dev = 4.868e-12
+    nmax= 160   Arb rel-dev = 1.884e-52   BigFloat rel-dev = 3.615e-66
+    nmax= 240   Arb rel-dev = 1.884e-52   BigFloat rel-dev = 3.615e-66
+    nmax= 320   Arb rel-dev = 1.884e-52   BigFloat rel-dev = 3.615e-66
+    nmax= 400   Arb rel-dev = 1.884e-52   BigFloat rel-dev = 3.615e-66
+  Schw |ω|=2, 45°:
+    nmax=  80   Arb rel-dev = 6.224e+41   BigFloat rel-dev = 2.327e+29
+    nmax= 160   Arb rel-dev = 3.073e+25   BigFloat rel-dev = 8.167e+12
+    nmax= 240   Arb rel-dev = 7.078e+11   BigFloat rel-dev = 6.050e-22
+    nmax= 320   Arb rel-dev = 7.078e+11   BigFloat rel-dev = 8.486e-47
+    nmax= 400   Arb rel-dev = 7.078e+11   BigFloat rel-dev = 8.486e-47
+  Kerr |ω|=2, 45°:
+    nmax=  80   Arb rel-dev = 4.253e+40   BigFloat rel-dev = 2.230e+29
+    nmax= 160   Arb rel-dev = 9.254e+23   BigFloat rel-dev = 7.749e+12
+    nmax= 240   Arb rel-dev = 3.716e+11   BigFloat rel-dev = 5.857e-22
+    nmax= 320   Arb rel-dev = 3.716e+11   BigFloat rel-dev = 1.760e-46
+    nmax= 400   Arb rel-dev = 3.716e+11   BigFloat rel-dev = 1.760e-46
