@@ -85,22 +85,30 @@ function _extend_monodromy_ctx!(ctx::_MonodromyCtx{R,C}, target::Int) where {R,C
     εCH, qCH     = ctx.εCH, ctx.qCH
     μ1C, μ2C     = ctx.μ1C, ctx.μ2C
 
+    # `_strip_radius` keeps the Complex{Arb} recurrence in POINT arithmetic
+    # (midpoints computed exactly to working precision, exactly as MPFR/BigFloat):
+    # carrying ball radii through the factorially-growing a1/a2 terms corrupts the
+    # MIDPOINT at large |ω| (the cancellation in the cos(2πν) closed form pushes
+    # the certified radius past the midpoint, and at large Im(ν) the midpoint
+    # itself goes NaN), so the ν extraction breaks at some high-|ω| angles.  It is
+    # a strict no-op for Float64/BigFloat (generic `_strip_radius(::Complex)=z`),
+    # so those paths stay byte-for-byte identical.
     for n in (ctx.nfilled + 1):target
         a1p = a1[n];  a1pp = n >= 2 ? a1[n-1] : zero(C)
         c2 = (αε - (n-1+δCH)) * (αε - (n-2+γCH+δCH)) * εCH / n
         c1 = (αε^2 + αε*(1-2n-γCH-δCH+εCH) +
               (n^2 - qCH + n*(-1+γCH+δCH-εCH) + εCH - δCH*εCH)) / n
-        a1[n+1] = c2*a1pp - c1*a1p
+        a1[n+1] = _strip_radius(c2*a1pp - c1*a1p)
 
         a2p = a2[n];  a2pp = n >= 2 ? a2[n-1] : zero(C)
         d2 = (αε + (n-2)) * (αε + (n-1-γCH)) * εCH / n
         d1 = (αε^2 + (n^2 - qCH + γCH + δCH - n*(1+γCH+δCH-εCH) - εCH) +
               αε*(-1+2n-γCH-δCH+εCH)) / n
-        a2[n+1] = -d2*a2pp + d1*a2p
+        a2[n+1] = _strip_radius(-d2*a2pp + d1*a2p)
 
         # Pochhammer factors (original loop index i ≡ n): Poch_x[i+1] = (…)·Poch_x[i]
-        Poch_p[n+1] = (-μ2C + μ1C + n - 1) * Poch_p[n]
-        Poch_m[n+1] = ( μ2C - μ1C + n - 1) * Poch_m[n]
+        Poch_p[n+1] = _strip_radius((-μ2C + μ1C + n - 1) * Poch_p[n])
+        Poch_m[n+1] = _strip_radius(( μ2C - μ1C + n - 1) * Poch_m[n])
     end
     ctx.nfilled = target
     return ctx
@@ -123,7 +131,13 @@ function _monodromy_value(ctx::_MonodromyCtx{R,C}, n::Int) where {R,C}
 
     # NOTE: `2π^2` is a Float64 literal (≈19.7392 to 16 digits) and would cap
     # the BigFloat path at ~1e-16; use the full-precision `2*R(π)^2`.
-    return cos(π*(μ1C - μ2C)) + (2*R(π)^2 / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
+    # `complex(...)` keeps the numerator's float type: Base promotes
+    # `BigFloat/Complex{BigFloat}` to Complex{BigFloat} on its own, but Arblib
+    # promotes `Arb/Complex{Arb}` to the foreign `Acb` — which then breaks the
+    # complex-ω branch (`complex(::Acb)`) downstream.  Making it complex first
+    # keeps the result Complex{R} for every R; byte-identical for Float64/BigFloat.
+    return cos(π*(μ1C - μ2C)) +
+           (complex(2*R(π)^2) / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
 end
 
 """
@@ -279,10 +293,16 @@ Matches Wolfram Teukolsky package "Monodromy" method.
 same as `monodromy_cos2pi_nu` default). This is independent of `nmax_cf`
 used in the continued-fraction Newton solver.
 """
+# Generic no-op: Float64/BigFloat carry no ball radius.  Complex{Arb}/Acb get the
+# midpoint-extracting overrides in arb_compat.jl.
+_strip_radius(z::Complex) = z
+
 function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
     p    = MSTParams(s, l, m, a, ω)
     R    = typeof(real(p.ϵ))
-    c2pn = _monodromy_adaptive(s, l, m, a, ω, p.λ; R=R, nmax0=nmax_mono)
+    # Point-estimate the converged cos(2πν): at large |ω| its rigorous ball is
+    # blown by cancellation, but its midpoint matches BigFloat — see _strip_radius.
+    c2pn = _strip_radius(_monodromy_adaptive(s, l, m, a, ω, p.λ; R=R, nmax0=nmax_mono))
     rc   = real(c2pn)
     twoπ = 2 * R(π)   # full-precision 2π (the Float64 literal caps ν at ~1e-16)
 
@@ -768,8 +788,8 @@ function _compute_nu_monodromy_acb(s::Int, l::Int, m::Int, a::Arb, ω::Complex{A
                                    nmax_mono::Int=60)
     p    = MSTParams(s, l, m, a, ω)         # R = Arb; p.λ::Complex{Arb}
     R    = typeof(real(p.ϵ))                # === Arb
-    c2pn = _monodromy_adaptive_acb(s, l, m, a, ω, p.λ;
-                                   prec=precision(Arb), nmax0=nmax_mono)
+    c2pn = _strip_radius(_monodromy_adaptive_acb(s, l, m, a, ω, p.λ;
+                                   prec=precision(Arb), nmax0=nmax_mono))
     rc   = real(c2pn)
     twoπ = 2 * R(π)
 

@@ -226,3 +226,7 @@ include("test_pn.jl")
 
 # Track B5: point-particle source convolution + fluxes.
 include("test_fluxes.jl")
+
+# Arb backend validation for Binc/Bref/Rin/Rup at large complex frequency
+# (self-consistency vs the BigFloat path + radial Wronskian).
+include("test_arb_amplitudes.jl")
