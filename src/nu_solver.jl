@@ -240,6 +240,19 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
                 Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
         end
     end
+    # ADDITIVE native-Acb in-place backend (M2): opt-in via backend=:acb.  Same
+    # plumbing as :arb (returns Complex{Arb} + MSTParams{Arb}) but the monodromy
+    # recurrence/value runs through a preallocated Vector{Acb} + Arblib in-place
+    # kernel (zero heap boxes/step).  Default :bigfloat never enters; the
+    # Float64/BigFloat/:arb control flow is byte-for-byte unchanged.
+    if backend === :acb
+        method == "Monodromy" || error("backend=:acb supports only method=\"Monodromy\" (M2 scope).")
+        return setprecision(Arb, precision) do
+            ωc = complex(ω)
+            _compute_nu_monodromy_acb(s, l, m, Arb(a),
+                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
+        end
+    end
     if precision > 64
         return setprecision(BigFloat, precision) do
             compute_nu(s, l, m, BigFloat(a), Complex{BigFloat}(complex(ω));
@@ -440,4 +453,311 @@ function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
     @warn "compute_nu: Newton did not converge, |g| = $(abs(g0(ν0_fb)))"
     ν_best, _ = newton_from(ν0_fb)
     return ν_best, p
+end
+
+# ============================================================
+#  Native-Acb in-place monodromy kernel (M2)
+#
+#  A bit-faithful clone of the BigFloat monodromy path
+#  (_MonodromyCtx / _extend_monodromy_ctx! / _monodromy_value /
+#  _monodromy_adaptive), with the per-op-allocating Complex{Arb}/BigFloat
+#  arithmetic replaced by preallocated Vector{Acb} + a fixed register set +
+#  Arblib in-place `!` ops (every op carries prec=P).  Hot loop = 0 heap
+#  boxes/step.  Reached ONLY via compute_nu(...; backend=:acb); the
+#  Float64/BigFloat/:arb paths are untouched.
+#
+#  SCOPE: monodromy recurrence + value ONLY.  λ comes from the existing
+#  compute_lambda (via MSTParams) and is converted to Acb once at the boundary;
+#  params.jl is NOT modified and no warm-start is added.
+# ============================================================
+
+"""
+    _MonodromyCtxAcb
+
+In-place native-Acb monodromy context (M2 analogue of `_MonodromyCtx`).  All Acb
+fields are MUTATED in place (`Arblib.<op>!(field, …)`), never reassigned, so the
+underlying FLINT object identity stays stable across extend/value calls.
+"""
+mutable struct _MonodromyCtxAcb
+    a1::Vector{Acb}; a2::Vector{Acb}
+    Poch_p::Vector{Acb}; Poch_m::Vector{Acb}
+    # recurrence-invariant Acb constants (built once at construction)
+    ACαε::Acb; ACεCH::Acb
+    AC_aδ::Acb; AC_aγδ::Acb; AC_aγ::Acb
+    ACK1::Acb; ACL1::Acb; ACKd::Acb; ACLd::Acb
+    ACcMp::Acb; ACcMm::Acb
+    # value-invariant Acb (built once)
+    gMp::Acb; gMm::Acb; πAcb::Acb; twoπ2::Acb
+    # per-step scratch (reused across every n and every extend call)
+    t1::Acb; t2::Acb; acc::Acb
+    c1r::Acb; c2r::Acb; d1r::Acb; d2r::Acb
+    nfilled::Int
+    prec::Int
+end
+
+"""
+    _build_monodromy_ctx_acb(s, l, m, a, ω, λ, nmax; prec=precision(Arb))
+
+Build the native-Acb monodromy context up to truncation `nmax`.  The O(1) scalar
+setup is done in `Complex{BigFloat}` (the de-risked, validated arithmetic — zero
+perf benefit from going native off the hot loop), then converted to Acb once at
+the boundary.  `a`, `ω`, `λ` may be Arb/Complex{Arb} (production) or
+BigFloat/Complex{BigFloat}; only their numeric value is used.
+"""
+function _build_monodromy_ctx_acb(s::Int, _l::Int, m::Int, a, ω, λ, nmax::Int;
+                                  prec::Int=precision(Arb))
+    # --- O(1) scalar setup in Complex{BigFloat} (exact mirror of
+    #     _build_monodromy_ctx), regrouped so the n-dependence is integer ops. ---
+    ACαε = ACεCH = AC_aδ = AC_aγδ = AC_aγ = Acb(0)
+    ACK1 = ACL1 = ACKd = ACLd = ACcMp = ACcMm = Acb(0)
+    gMp = gMm = πAcb = twoπ2 = Acb(0)
+    setprecision(BigFloat, prec) do
+        C   = Complex{BigFloat}
+        ωc  = complex(ω)
+        q   = BigFloat(real(a))
+        ε   = 2 * C(BigFloat(real(ωc)), BigFloat(imag(ωc)))
+        κ   = sqrt(C(1 - q^2))
+        τ   = (ε - m*q) / κ
+        γCH = 1 - s - im*ε - im*τ
+        δCH = 1 + s + im*ε - im*τ
+        εCH = 2im*ε*κ
+        αε  = C(1 - s) + im*(ε - τ)
+        λbf = C(BigFloat(real(λ)), BigFloat(imag(λ)))
+        qCH = s*(s+1) - ε^2 + im*(1-2s)*ε*κ + λbf + im*τ + τ^2
+        μ1C = αε - (γCH + δCH)
+        μ2C = -αε
+
+        αε2   = αε^2
+        gd    = γCH + δCH
+        c_aδ  = αε - δCH                  # c2 = (c_aδ-(n-1))*(c_aγδ-(n-2))*εCH/n
+        c_aγδ = αε - γCH - δCH
+        cA    = 1 - γCH - δCH + εCH       # (1-2n-γCH-δCH+εCH) = cA - 2n
+        cC    = εCH - δCH*εCH
+        K1    = αε2 + αε*cA - qCH + cC    # c1 = (K1 + n*L1 + n^2)/n
+        L1    = -cA - 2*αε
+        c_aγ  = αε - γCH                  # d2 = (αε+(n-2))*(c_aγ+(n-1))*εCH/n
+        cS    = 1 + γCH + δCH - εCH
+        Kd    = αε2 - qCH + gd - εCH - αε*cS   # d1 = (Kd + n*Ld + n^2)/n
+        Ld    = -cS + 2*αε
+        cMp   = μ1C - μ2C                 # = -μ2C + μ1C
+        cMm   = μ2C - μ1C
+
+        toacb(z) = Acb(z; prec=prec)
+        ACαε   = toacb(αε);   ACεCH  = toacb(εCH)
+        AC_aδ  = toacb(c_aδ); AC_aγδ = toacb(c_aγδ); AC_aγ = toacb(c_aγ)
+        ACK1   = toacb(K1);   ACL1   = toacb(L1)
+        ACKd   = toacb(Kd);   ACLd   = toacb(Ld)
+        ACcMp  = toacb(cMp);  ACcMm  = toacb(cMm)
+        # value-invariant constants
+        gMp = Acb(0); gMm = Acb(0)
+        Arblib.gamma!(gMp, ACcMp; prec=prec)
+        Arblib.gamma!(gMm, ACcMm; prec=prec)
+        πAcb  = Acb(Arb(π); prec=prec)
+        twoπ2 = Acb(2 * Arb(π)^2; prec=prec)
+        return nothing
+    end
+
+    cap = max(nmax, 1) + 2
+    a1 = [Acb(0) for _ in 1:cap]
+    a2 = [Acb(0) for _ in 1:cap]
+    Poch_p = [Acb(1) for _ in 1:cap]
+    Poch_m = [Acb(1) for _ in 1:cap]
+    Arblib.set!(a1[1], 1); Arblib.set!(a2[1], 1)
+    # Poch_p[1] = Poch_m[1] = 1 already (Acb(1)).
+
+    ctx = _MonodromyCtxAcb(a1, a2, Poch_p, Poch_m,
+                           ACαε, ACεCH, AC_aδ, AC_aγδ, AC_aγ,
+                           ACK1, ACL1, ACKd, ACLd, ACcMp, ACcMm,
+                           gMp, gMm, πAcb, twoπ2,
+                           Acb(0), Acb(0), Acb(0),
+                           Acb(0), Acb(0), Acb(0), Acb(0),
+                           0, prec)
+    return _extend_monodromy_ctx_acb!(ctx, nmax; prec=prec)
+end
+
+"""
+    _extend_monodromy_ctx_acb!(ctx, target; prec=ctx.prec)
+
+March the native-Acb recurrence in-place from `ctx.nfilled` up to truncation
+`target` (no-op if already deep enough).  Appended Vector{Acb} slots are FILLED
+with fresh Acb objects (never left undef).  0 heap boxes per step (all `!` ops
+write into preallocated registers / array slots; output aliasing is FLINT-safe).
+"""
+function _extend_monodromy_ctx_acb!(ctx::_MonodromyCtxAcb, target::Int;
+                                    prec::Int=ctx.prec)
+    target ≤ ctx.nfilled && return ctx
+
+    a1, a2 = ctx.a1, ctx.a2
+    Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
+    need = target + 2
+    if length(a1) < need
+        for v in (a1, a2)
+            old = length(v); resize!(v, need)
+            for k in (old+1):need; v[k] = Acb(0); end
+        end
+        for v in (Poch_p, Poch_m)
+            old = length(v); resize!(v, need)
+            for k in (old+1):need; v[k] = Acb(1); end
+        end
+    end
+
+    ACαε, ACεCH = ctx.ACαε, ctx.ACεCH
+    AC_aδ, AC_aγδ, AC_aγ = ctx.AC_aδ, ctx.AC_aγδ, ctx.AC_aγ
+    ACK1, ACL1, ACKd, ACLd = ctx.ACK1, ctx.ACL1, ctx.ACKd, ctx.ACLd
+    ACcMp, ACcMm = ctx.ACcMp, ctx.ACcMm
+    t1, t2, acc = ctx.t1, ctx.t2, ctx.acc
+    c1r, c2r, d1r, d2r = ctx.c1r, ctx.c2r, ctx.d1r, ctx.d2r
+
+    for n in (ctx.nfilled + 1):target
+        # c2 = (c_aδ-(n-1))*(c_aγδ-(n-2))*εCH/n
+        Arblib.sub!(t1, AC_aδ,  n-1; prec=prec)
+        Arblib.sub!(t2, AC_aγδ, n-2; prec=prec)
+        Arblib.mul!(t1, t1, t2;     prec=prec)
+        Arblib.mul!(t1, t1, ACεCH;  prec=prec)
+        Arblib.div!(c2r, t1, n;     prec=prec)
+        # c1 = (K1 + n*L1 + n^2)/n
+        Arblib.mul!(acc, ACL1, n;   prec=prec)
+        Arblib.add!(acc, acc, ACK1; prec=prec)
+        Arblib.add!(acc, acc, n*n;  prec=prec)
+        Arblib.div!(c1r, acc, n;    prec=prec)
+        # a1[n+1] = c2*a1[n-1] - c1*a1[n]
+        if n >= 2
+            Arblib.mul!(a1[n+1], c2r, a1[n-1]; prec=prec)
+        else
+            Arblib.zero!(a1[n+1])
+        end
+        Arblib.submul!(a1[n+1], c1r, a1[n]; prec=prec)
+
+        # d2 = (αε+(n-2))*(c_aγ+(n-1))*εCH/n
+        Arblib.add!(t1, ACαε,  n-2; prec=prec)
+        Arblib.add!(t2, AC_aγ, n-1; prec=prec)
+        Arblib.mul!(t1, t1, t2;     prec=prec)
+        Arblib.mul!(t1, t1, ACεCH;  prec=prec)
+        Arblib.div!(d2r, t1, n;     prec=prec)
+        # d1 = (Kd + n*Ld + n^2)/n
+        Arblib.mul!(acc, ACLd, n;   prec=prec)
+        Arblib.add!(acc, acc, ACKd; prec=prec)
+        Arblib.add!(acc, acc, n*n;  prec=prec)
+        Arblib.div!(d1r, acc, n;    prec=prec)
+        # a2[n+1] = d1*a2[n] - d2*a2[n-1]
+        Arblib.mul!(a2[n+1], d1r, a2[n]; prec=prec)
+        if n >= 2
+            Arblib.submul!(a2[n+1], d2r, a2[n-1]; prec=prec)
+        end
+
+        # Poch_p[n+1] = (cMp + n-1)*Poch_p[n]
+        Arblib.add!(t1, ACcMp, n-1; prec=prec)
+        Arblib.mul!(Poch_p[n+1], t1, Poch_p[n]; prec=prec)
+        # Poch_m[n+1] = (cMm + n-1)*Poch_m[n]
+        Arblib.add!(t2, ACcMm, n-1; prec=prec)
+        Arblib.mul!(Poch_m[n+1], t2, Poch_m[n]; prec=prec)
+    end
+    ctx.nfilled = target
+    return ctx
+end
+
+"""
+    _monodromy_value_acb(ctx, n; prec=ctx.prec) -> Complex{Arb}
+
+Evaluate cos(2πν) from a prebuilt native-Acb `ctx` at truncation `n` (requires
+`n ≤ ctx.nfilled`).  Same closed form as `_monodromy_value`; returns
+`Complex{Arb}` so the adaptive driver and branch extraction match the M1 path.
+"""
+function _monodromy_value_acb(ctx::_MonodromyCtxAcb, n::Int; prec::Int=ctx.prec)
+    a1, a2 = ctx.a1, ctx.a2
+    Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
+
+    jmax = cld(n, 2)
+    s1 = Acb(0); s2 = Acb(0)
+    # a1sum = Σ_{j=0..jmax} a1[j+1]*Poch_p[n-j+1]
+    for j in 0:jmax
+        Arblib.addmul!(s1, a1[j+1], Poch_p[n-j+1]; prec=prec)
+    end
+    # a2sum = Σ_{j=0..jmax} (-1)^j a2[j+1]*Poch_m[n-j+1]
+    for j in 0:jmax
+        if iseven(j)
+            Arblib.addmul!(s2, a2[j+1], Poch_m[n-j+1]; prec=prec)
+        else
+            Arblib.submul!(s2, a2[j+1], Poch_m[n-j+1]; prec=prec)
+        end
+    end
+    Arblib.mul!(s1, ctx.gMp, s1; prec=prec)
+    Arblib.mul!(s2, ctx.gMm, s2; prec=prec)
+
+    # cos(π*(μ1C-μ2C)) = cos(π*cMp)
+    argreg = Acb(0); cosreg = Acb(0)
+    Arblib.mul!(argreg, ctx.ACcMp, ctx.πAcb; prec=prec)
+    Arblib.cos!(cosreg, argreg; prec=prec)
+
+    # term = (2π²/(s1*s2))*(-1)^(n-1)*a1[n+1]*a2[n+1]
+    term = Acb(0); den = Acb(0)
+    Arblib.mul!(den, s1, s2; prec=prec)
+    Arblib.div!(term, ctx.twoπ2, den; prec=prec)
+    Arblib.mul!(term, term, a1[n+1]; prec=prec)
+    Arblib.mul!(term, term, a2[n+1]; prec=prec)
+    iseven(n) && Arblib.neg!(term, term)   # (-1)^(n-1): n even → -1
+
+    res = Acb(0)
+    Arblib.add!(res, cosreg, term; prec=prec)
+    return Complex{Arb}(res)
+end
+
+"""
+    _monodromy_adaptive_acb(s, l, m, a, ω, λ; prec=precision(Arb), nmax0=60)
+
+Native-Acb analogue of `_monodromy_adaptive` (R = Arb): identical adaptive driver
+(nmax clamp, verify value@nmax vs value@(nmax−Δ) to ~16·eps(Arb), extend & recheck
+if needed), with the inner monodromy value supplied by the Acb kernel.  Returns
+`Complex{Arb}`.
+"""
+function _monodromy_adaptive_acb(s::Int, l::Int, m::Int, a, ω, λ;
+                                 prec::Int=precision(Arb), nmax0::Int=60)
+    tol  = 16 * eps(Arb)
+    Δ    = 128
+    nmax = clamp(ceil(Int, 4.71 * prec), max(nmax0, 120) + Δ, 4000)
+
+    ctx = _build_monodromy_ctx_acb(s, l, m, a, ω, λ, nmax; prec=prec)
+    c   = _monodromy_value_acb(ctx, nmax; prec=prec)
+    for _ in 1:32
+        nlo = max(nmax0, nmax - Δ)
+        clo = _monodromy_value_acb(ctx, nlo; prec=prec)
+        abs(c - clo) ≤ tol * abs(c) && return c
+        nmax ≥ 4000 && return c                  # safety cap: best effort
+        nmax = min(nmax + 2Δ, 4000)
+        _extend_monodromy_ctx_acb!(ctx, nmax; prec=prec)
+        c = _monodromy_value_acb(ctx, nmax; prec=prec)
+    end
+    return c
+end
+
+"""
+    _compute_nu_monodromy_acb(s, l, m, a::Arb, ω::Complex{Arb}; nmax_mono=60)
+
+ν via the native-Acb monodromy kernel.  Structurally identical to
+`_compute_nu_monodromy` (R = Arb): λ comes from the existing `compute_lambda`
+(via `MSTParams`; params.jl untouched), cos(2πν) from `_monodromy_adaptive_acb`,
+then the SAME branch-selection block (real / half-integer / integer / complex-ω).
+Returns `(ν::Complex{Arb}, p::MSTParams{Arb})`, consistent with the M1 backend.
+"""
+function _compute_nu_monodromy_acb(s::Int, l::Int, m::Int, a::Arb, ω::Complex{Arb};
+                                   nmax_mono::Int=60)
+    p    = MSTParams(s, l, m, a, ω)         # R = Arb; p.λ::Complex{Arb}
+    R    = typeof(real(p.ϵ))                # === Arb
+    c2pn = _monodromy_adaptive_acb(s, l, m, a, ω, p.λ;
+                                   prec=precision(Arb), nmax0=nmax_mono)
+    rc   = real(c2pn)
+    twoπ = 2 * R(π)
+
+    # Branch selection — verbatim from _compute_nu_monodromy (R = Arb).
+    ν = if imag(complex(ω)) != 0
+        R(l) - acos(complex(c2pn)) / twoπ
+    elseif -1 ≤ rc ≤ 1
+        R(l) - acos(complex(rc)) / twoπ
+    elseif rc < -1
+        Complex(R(1) / 2, +acosh(-rc) / twoπ)
+    else
+        Complex(R(0), -acosh(rc) / twoπ)
+    end
+
+    return ν, p
 end

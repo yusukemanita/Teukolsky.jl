@@ -13,6 +13,7 @@ module BHPtoolkit
 
 using LinearAlgebra, SpecialFunctions, Printf
 using Arblib: Arb, Acb   # type names only (Arb<:AbstractFloat); see arb_compat.jl
+import Arblib            # qualified Arblib.<fn>! for the native-Acb kernel (M2)
 
 export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed

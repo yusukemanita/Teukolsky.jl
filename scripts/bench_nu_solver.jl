@@ -35,6 +35,17 @@ function time_case_arb(prec, a, ω; n=N)
     return best
 end
 
+# Acb backend timing (M2: native in-place Acb monodromy kernel); same protocol.
+function time_case_acb(prec, a, ω; n=N)
+    compute_nu(S, L, M, a, ω; precision=prec, backend=:acb)   # warmup
+    best = Inf
+    for _ in 1:n
+        t = @elapsed compute_nu(S, L, M, a, ω; precision=prec, backend=:acb)
+        best = min(best, t)
+    end
+    return best
+end
+
 println("# nu_solver benchmark  (compute_nu(-2,2,2,a,ω), method=Monodromy)")
 println("# Julia $(VERSION), N=$N min-of-N @elapsed, warmup once")
 println("precision  case   a     omega   min_seconds")
@@ -64,6 +75,23 @@ for (lbl, a, ω) in CASES
 end
 
 # ------------------------------------------------------------------
+# Acb-256 native in-place kernel (M2) vs BigFloat-256: same protocol,
+# plus ratio BF256/Acb256.  The native-Acb monodromy recurrence removes the
+# per-op heap boxes that cap M1 at ~2x; measured ~6-7x here.  (Residual cost
+# is now the λ/Rayleigh path in params.jl, still Complex{Arb} — the next target.)
+# ------------------------------------------------------------------
+println()
+println("# Acb-256 native kernel vs BigFloat-256  (backend=:acb), min-of-N @elapsed")
+println("case   a     omega   BF256_s    Acb256_s   ratio(BF/Acb)")
+for (lbl, a, ω) in CASES
+    tbf  = time_case(256, a, ω)
+    tacb = time_case_acb(256, a, ω)
+    println(rpad(lbl, 6), rpad(a, 6), rpad(ω, 8),
+            @sprintf("%-11.6f", tbf), @sprintf("%-11.6f", tacb),
+            @sprintf("%.2fx", tbf / tacb))
+end
+
+# ------------------------------------------------------------------
 # Allocation / GC profile for ONE BF256 ν solve (Schwarzschild).
 # ------------------------------------------------------------------
 function alloc_profile(prec, a, ω)
@@ -80,6 +108,17 @@ function alloc_profile_arb(prec, a, ω)
     compute_nu(S, L, M, a, ω; precision=prec, backend=:arb)   # warmup
     GC.gc()
     stats = Base.@timed compute_nu(S, L, M, a, ω; precision=prec, backend=:arb)
+    nalloc = Base.gc_alloc_count(stats.gcstats)
+    return (bytes=stats.bytes, nalloc=nalloc, gctime=stats.gctime, time=stats.time)
+end
+
+# Acb-256 allocation profile (M2): the monodromy recurrence no longer boxes per
+# op; the allocations that remain are now dominated by the λ/Rayleigh path
+# (MSTParams → compute_lambda, still Complex{Arb}), not the kernel.
+function alloc_profile_acb(prec, a, ω)
+    compute_nu(S, L, M, a, ω; precision=prec, backend=:acb)   # warmup
+    GC.gc()
+    stats = Base.@timed compute_nu(S, L, M, a, ω; precision=prec, backend=:acb)
     nalloc = Base.gc_alloc_count(stats.gcstats)
     return (bytes=stats.bytes, nalloc=nalloc, gctime=stats.gctime, time=stats.time)
 end
@@ -102,3 +141,12 @@ pa = alloc_profile_arb(256, 0.0, 0.5)
 pak = alloc_profile_arb(256, 0.9, 0.5)
 @printf("Arb256 Kerr: %d allocations, %.1f MiB, gctime %.4f s (of %.4f s)\n",
         pak.nalloc, pak.bytes/2^20, pak.gctime, pak.time)
+
+println()
+println("# Allocation profile, ONE Acb256 solve (backend=:acb, M2 native kernel)")
+pc = alloc_profile_acb(256, 0.0, 0.5)
+@printf("Acb256 Schw: %d allocations, %.1f MiB, gctime %.4f s (of %.4f s)\n",
+        pc.nalloc, pc.bytes/2^20, pc.gctime, pc.time)
+pck = alloc_profile_acb(256, 0.9, 0.5)
+@printf("Acb256 Kerr: %d allocations, %.1f MiB, gctime %.4f s (of %.4f s)\n",
+        pck.nalloc, pck.bytes/2^20, pck.gctime, pck.time)
