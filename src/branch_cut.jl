@@ -76,6 +76,56 @@ end
 # ============================================================
 
 """
+    compute_mst_core(s, l, m, a, ω; nmax=80, nmax_cf=150, ν_init=nothing, method="Monodromy")
+
+Shared MST core solve.  Returns the named tuple `(p, ν, fn, Ap, Am)` — the pieces
+common to `compute_qtilde` and the radial solutions `Rup`/`Rin`.  Compute this ONCE
+per `(s,l,m,a,ω)` and feed it to both, instead of each independently re-solving
+`ν` + `fn` + `A±` (as `compute_qtilde` and `TeukolskyRadial` do separately).
+
+Use with [`qtilde_from_core`](@ref), [`mst_ctrans`](@ref), and `Rup(core.p, core.ν, core.fn, r; ctrans=...)`.
+"""
+function compute_mst_core(s::Int, l::Int, m::Int, a, ω;
+                          nmax::Int=80, nmax_cf::Int=150, ν_init=nothing, method::String="Monodromy",
+                          fn_tol::Real=-1)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init, method=method)
+    fn   = compute_fn(p, ν; nmax=nmax, tol=fn_tol)
+    Ap   = compute_Aplus(p, ν, fn; nmax=nmax)
+    Am   = compute_Aminus(p, ν, fn; nmax=nmax)
+    return (p=p, ν=ν, fn=fn, Ap=Ap, Am=Am)
+end
+
+"""
+    qtilde_from_core(core, s) -> q̃
+
+The branch-cut coefficient q̃(ω) evaluated from a [`compute_mst_core`](@ref) result
+(no re-solve).  Identical value to `compute_qtilde(...).qtilde`.
+"""
+function qtilde_from_core(core, s::Int)
+    p = core.p
+    ε, κ, ω_c = p.ϵ, p.κ, p.ω
+    branch    = exp(2im * ε * log(ε))      # ε^{+2iε}  (sign flipped vs q)
+    phase     = exp(-im * ε * (1 - κ))    # e^{-iε(1-κ)} (sign flipped)
+    monodromy = 1 - exp(2π * (ε + im*core.ν))  # 1 - e^{2π(ε+iν)} (ν sign flipped)
+    return im * (core.Am / core.Ap) * ω_c^(-2s) * branch * phase * monodromy
+end
+
+"""
+    mst_ctrans(core, s) -> Ctrans
+
+The `Rup` normalization constant `Ctrans = ω^{-1-2s} A^ν_- e^{i(ε logε − (1−κ)/2 ε)}`
+built from a shared [`compute_mst_core`](@ref) (reuses `core.Am`).  Pass as
+`Rup(core.p, core.ν, core.fn, r; ctrans=mst_ctrans(core, s))` so `Rup` does not
+recompute `A^ν_-`.
+"""
+function mst_ctrans(core, s::Int)
+    p = core.p
+    ε, κ, ω_c = p.ϵ, p.κ, p.ω
+    phase_conj = exp(im * (ε * log(ε) - (1 - κ) / 2 * ε))
+    return ω_c^(-1 - 2s) * core.Am * phase_conj
+end
+
+"""
     compute_qtilde(s, l, m, a, ω; nmax=80, nmax_cf=150)
 
 Compute the branch-cut coefficient q̃(ω) for the R^down MST solution.
@@ -94,21 +144,6 @@ Named tuple `(qtilde, ν, p, Ap, Am)`.
 """
 function compute_qtilde(s::Int, l::Int, m::Int, a, ω;
                         nmax::Int=80, nmax_cf::Int=150, ν_init=nothing, method::String="Monodromy")
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init, method=method)
-    fn   = compute_fn(p, ν; nmax=nmax)
-
-    Ap = compute_Aplus(p, ν, fn; nmax=nmax)
-    Am = compute_Aminus(p, ν, fn; nmax=nmax)
-
-    ε   = p.ϵ
-    κ   = p.κ
-    ω_c = p.ω
-
-    branch    = exp(2im * ε * log(ε))      # ε^{+2iε}  (sign flipped vs q)
-    phase     = exp(-im * ε * (1 - κ))    # e^{-iε(1-κ)} (sign flipped)
-    monodromy = 1 - exp(2π * (ε + im*ν))  # 1 - e^{2π(ε+iν)} (ν sign flipped)
-
-    qtilde_val = im * (Am / Ap) * ω_c^(-2s) * branch * phase * monodromy
-
-    return (qtilde=qtilde_val, ν=ν, p=p, Ap=Ap, Am=Am)
+    core = compute_mst_core(s, l, m, a, ω; nmax=nmax, nmax_cf=nmax_cf, ν_init=ν_init, method=method)
+    return (qtilde=qtilde_from_core(core, s), ν=core.ν, p=core.p, Ap=core.Ap, Am=core.Am)
 end

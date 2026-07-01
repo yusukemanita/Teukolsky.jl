@@ -20,6 +20,7 @@ export MSTParams, compute_nu, compute_fn, compute_fn_truncated
 export compute_amplitudes, compute_amplitudes_nufixed
 export compute_amplitudes_mero, compute_amplitudes_nufixed_mero
 export compute_q, compute_qtilde
+export compute_mst_core, qtilde_from_core, mst_ctrans
 export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
 export pochhammer

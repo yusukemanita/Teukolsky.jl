@@ -304,11 +304,15 @@ end
 #  dHU[n] = d/dẑ [c^n U(n+a, 2n+b, c)]  with dc/dẑ = -2i
 # ============================================================
 
-function dhu_exact(hp::HUParams, n::Int)
+# dHU[n] = -2i ( c^{n-1} n U(a+n,b+2n,c) - c^n (a+n) U(1+a+n,1+b+2n,c) ).
+# The first confluent-U is exactly hu_exact(hp,n)/c^n, i.e. c^{n-1} n U = (n/c)·HU[n]
+# (optimization B): pass the already-computed base HU[n] to skip re-evaluating it.
+function dhu_exact(hp::HUParams, n::Int, hu_n)
     a, b, c = hp.aU, hp.bU, hp.c
-    -2im * (c^(n-1) * n * hypergeometric_U(a + n, b + 2n, c) -
+    -2im * ((n / c) * hu_n -
             c^n * (a + n) * hypergeometric_U(1 + a + n, 1 + b + 2n, c))
 end
+dhu_exact(hp::HUParams, n::Int) = dhu_exact(hp, n, hu_exact(hp, n))
 
 """
 3-term recurrence for dHU going upward in n (n >= 2).

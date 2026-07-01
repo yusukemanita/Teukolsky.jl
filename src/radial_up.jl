@@ -200,7 +200,7 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(type
     function get_dhu(n::Int)
         haskey(dhu_cache, n) && return dhu_cache[n]
         if use_exact_all2 || n == 0 || n == 1
-            val = dhu_exact(hp, n)
+            val = dhu_exact(hp, n, get_hu(n))   # reuse base HU[n] (optimization B)
         elseif n >= 2
             t1, t2, t3 = dhu_up(hp, n, get_dhu(n-2), get_dhu(n-1), get_hu(n-1))
             val = t1 + t2 + t3
