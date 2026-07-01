@@ -3,7 +3,7 @@ using BHPtoolkit, Printf
 
 s,l,m = -2,2,2; a=0.0; r=10.0
 
-println("ω         Re(ν)    Im(ν)    |Rin_raw|    |Rin_phys|     case")
+println("ω         Re(ν)    Im(ν)    |Rin_raw|    |Rin|           case")
 println("─"^72)
 
 ν_prev = nothing
@@ -14,13 +14,12 @@ for ω in range(0.05, 1.0; length=50)
     rc   = real(c2pn)
     case = rc < -1 ? "half" : (rc > 1 ? "int " : "real")
     fn_d = compute_fn(p, ν; nmax=40)
+    Rv_raw  = BHPtoolkit._Rin_raw(p, ν, fn_d, r)
     Rv      = Rin(p, ν, fn_d, r)
-    Rv_phys = Rin_phys(p, ν, fn_d, r)
-    @printf "%.3f  %8.4f  %8.4f  %.4e   %.4e   %s\n" ω real(ν) imag(ν) abs(Rv) abs(Rv_phys) case
+    @printf "%.3f  %8.4f  %8.4f  %.4e   %.4e   %s\n" ω real(ν) imag(ν) abs(Rv_raw) abs(Rv) case
     global ν_prev = ν
 end
 
 println()
-println("Rin_raw  : raw MST series (normalization depends on ν branch → jumps at transitions)")
-println("Rin_phys : = Rin_raw / Btrans  (smooth; matches Teukolsky package convention)")
-println("Waveform : G = Rin_raw × Bref / (2iω × Binc) is also smooth (Btrans cancels)")
+println("Rin_raw  : raw MST series (internal; normalization depends on ν branch → jumps at transitions)")
+println("Rin      : = Rin_raw / Btrans  (smooth; matches Teukolsky package convention)")

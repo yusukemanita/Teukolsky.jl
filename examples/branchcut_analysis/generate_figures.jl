@@ -251,8 +251,8 @@ println("  → convergence_integrand.pdf")
 
 println("====== Fig.3: convergence_sigma_max ======")
 
-σ_max_vals = [1.0, 2.0, 5.0, 10.0, 20.0]
-colors3    = [:navy, :royalblue, :seagreen, :darkorange, :crimson]
+σ_max_vals = [1.0, 2.0, 5.0, 10.0]
+colors3    = [:navy, :royalblue, :seagreen, :darkorange]
 t_conv     = collect(range(-30.0, -0.5; length=600))
 
 fig3 = plot(
@@ -269,12 +269,46 @@ plot!(fig3, abs.(t_all[idx_neg_ref]), abs.(real.(ψ_num[idx_neg_ref])),
     label = "Numerical (ref.)", lw = 2, color = :steelblue, alpha = 0.6)
 
 for (σ_max, c) in zip(σ_max_vals, colors3)
-    # recompute ΔG_p on grid up to σ_max
     Nσ_c  = max(50, round(Int, 300 * σ_max / 20.0))
     σ_c, Δσ_c = logspaced_weights(1e-3, σ_max, Nσ_c)
-    ΔG_c  = compute_DG_pos(σ_c, a)
-    ψ_c   = [-im/(2π) * sum(ΔG_c[i]*Δσ_c[i]*exp(σ_c[i]*t) for i in 1:Nσ_c)
-             for t in t_conv]
+
+    if σ_max <= 10.0
+        # Float64 — fast and accurate for σ ≤ 10
+        ΔG_c  = compute_DG_pos(collect(σ_c), a)
+        ψ_c   = [-im/(2π) * sum(ΔG_c[i]*Δσ_c[i]*exp(σ_c[i]*t) for i in 1:Nσ_c)
+                 for t in t_conv]
+    else
+        # BigFloat — needed for σ > 10 where Float64 loses precision
+        println("  σ_max=$σ_max: using BigFloat ...")
+        setprecision(BigFloat, 256)
+        a_bf = BigFloat(string(a))
+        ΔG_bf = Vector{Complex{BigFloat}}(undef, Nσ_c)
+        ν_prev = nothing
+        for i in 1:Nσ_c
+            σ_i = BigFloat(σ_c[i])
+            ω_i = im * σ_i
+            if ν_prev === nothing
+                qt = compute_qtilde(s, l, m, a_bf, ω_i; nmax=150)
+            else
+                qt = compute_qtilde(s, l, m, a_bf, ω_i; nmax=150,
+                                    ν_init=ν_prev, method="Newton")
+            end
+            ν_prev = qt.ν
+            ΔG_bf[i] = -qt.qtilde / (2 * ω_i)
+            i % 20 == 0 && (print("."); flush(stdout))
+        end
+        println()
+        Δσ_bf = BigFloat.(Δσ_c)
+        σ_bf  = BigFloat.(σ_c)
+        ψ_c = Vector{ComplexF64}(undef, length(t_conv))
+        for (k, t) in enumerate(t_conv)
+            sv = zero(Complex{BigFloat})
+            for i in 1:Nσ_c
+                sv += ΔG_bf[i] * Δσ_bf[i] * exp(σ_bf[i] * BigFloat(t))
+            end
+            ψ_c[k] = ComplexF64(-im/(2π) * sv)
+        end
+    end
     plot!(fig3, abs.(t_conv), abs.(real.(ψ_c)),
           label = latexstring("\\sigma_{\\max}=$(σ_max)"),
           lw = 1.5, color = c, ls = :dash)

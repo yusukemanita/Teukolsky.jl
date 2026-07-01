@@ -10,7 +10,7 @@ s, l, m = -2, 2, 2
 a    = 0.0
 r    = 10.0
 nω   = 200
-ω_grid = range(0.05, 1.0; length=nω)
+ω_grid = range(0.05, 5.0; length=nω)
 
 Rin_raw_vals  = Vector{ComplexF64}(undef, nω)
 Rin_phys_vals = Vector{ComplexF64}(undef, nω)
@@ -32,8 +32,8 @@ function compute_Rin_sweep(s, l, m, a, r, ω_grid, nω)
     rc = real(BHPtoolkit.monodromy_cos2pi_nu(s, l, m, a, ω, p.λ))
     branch_vals[i] = rc < -1 ? :half : (rc > 1 ? :int : :real)
 
-    Rin_raw_vals[i]  = Rin(p, ν, fn, r)
-    Rin_phys_vals[i] = Rin_phys(p, ν, fn, r)
+    Rin_raw_vals[i]  = BHPtoolkit._Rin_raw(p, ν, fn, r)
+    Rin_phys_vals[i] = Rin(p, ν, fn, r)
     ν_vals[i]        = ν
         ν_prev = ν
         i % 40 == 0 && print("."); flush(stdout)
@@ -139,5 +139,6 @@ end
 savefig(fig_nu, joinpath(outdir, "Rin_phys_nu.png"))
 println("Saved: $(joinpath(outdir, "Rin_phys_nu.png"))")
 
-display(fig)
-display(fig_nu)
+# display(fig)
+# display(fig_nu)
+fig

@@ -151,61 +151,40 @@ end
 
 println("\nプロット中 ...")
 
-# --- 上段: 全成分の重ね合わせ ---
-p1 = plot(
-    xlabel     = L"t/M",
-    ylabel     = L"|\Re[\psi_4]|",
-    yscale     = :log10,
-    title      = "Waveform decomposition  (s=$s, l=$l, m=$m, a=$a)",
-    framestyle = :box, grid = true,
-    legend     = :topright,
-    size       = (900, 400))
-
-plot!(p1, collect(t_all), abs.(real.(ψ_num)),
-    label = "Numerical (high-prec.)", lw = 2, color = :steelblue)
-plot!(p1, collect(t_neg), abs.(real.(ψ_BC_pos)),
-    label = L"\psi_{BC}^{+}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
-plot!(p1, collect(t_pos), abs.(real.(ψ_BC_neg)),
-    label = L"\psi_{BC}^{-}\ (t>0)", lw = 1.5, color = :darkorange, ls = :dash)
-plot!(p1, collect(t_pos), abs.(real.(ψ_QNM)),
-    label = L"\psi_{QNM}\ (n=0\text{--}7,\ \pm m)",
-    lw = 1.5, color = :darkgreen, ls = :dash)
-plot!(p1, collect(t_pos), abs.(real.(ψ_sum)),
-    label = L"\psi_{QNM}+\psi_{BC}^{-}", lw = 1.5, color = :purple, ls = :dot)
-vline!(p1, [0.0], label = "", color = :black, lw = 0.8, ls = :dash)
-
-# --- 下段: 残差 |ψ_num - (QNM + BC⁻)|  (t>0) ---
-# t_posとt_allのインデックスを対応付け
+# --- 全成分の重ね合わせ ---
 t_pos_f64 = collect(t_pos)
 t_all_f64 = collect(t_all)
-
-# t_all のうち t > 0 の部分を抽出しt_posと共通範囲で補間
-idx_pos = findall(t_all_f64 .> 0.0)
+idx_pos  = findall(t_all_f64 .> 0.0)
 t_ref    = t_all_f64[idx_pos]
 ψ_ref    = ψ_num[idx_pos]
-
-# t_pos に最近傍でスナップして残差計算
-residual = Vector{Float64}(undef, length(t_pos_f64))
+ψ_num_minus_QNM = Vector{ComplexF64}(undef, length(t_pos_f64))
 for (k, t) in enumerate(t_pos_f64)
     j = argmin(abs.(t_ref .- t))
-    residual[k] = abs(real(ψ_ref[j]) - real(ψ_sum[k]))
+    ψ_num_minus_QNM[k] = ψ_ref[j] - ψ_QNM[k]
 end
 
-p2 = plot(
-    xlabel     = L"t/M",
-    ylabel     = L"|\Re[\psi_{num}] - \Re[\psi_{QNM}+\psi_{BC}^-]|",
-    yscale     = :log10,
-    title      = "Residual (t>0)",
-    framestyle = :box, grid = true,
-    legend     = :topright,
-    size       = (900, 300))
-plot!(p2, t_pos_f64, residual,
-    label = "residual", lw = 1.5, color = :gray)
-plot!(p2, collect(t_all), abs.(real.(ψ_num)),
-    label = "numerical (ref.)", lw = 1, color = :steelblue, alpha = 0.5)
+p1 = plot(
+    xlabel = L"t/M",
+    ylabel = L"|\mathrm{Re}[\psi_4]|",
+    yscale = :log10, ylim = (1e-14, 1e-2),
+    framestyle = :box, grid = true, legend = :topright)
+plot!(p1, t_all_f64, abs.(real.(ψ_num)),
+    label = "Numerical (high-prec.)", lw = 2, color = :steelblue)
+plot!(p1, collect(t_neg), abs.(real.(ψ_BC_pos)),
+    label = L"\psi_{PIA}\ (t<0)", lw = 1.5, color = :crimson, ls = :dash)
+plot!(p1, collect(t_pos), abs.(real.(ψ_QNM)),
+    label = L"\psi_{QNM}\ (n\leq 7,\ \pm m)",
+    lw = 1, color = :darkgreen, ls = :dash)
+# ψ_num - ψ_QNM: solid
+plot!(p1, t_pos_f64, abs.(real.(ψ_num_minus_QNM)),
+    label = L"\psi_{num} - \psi_{QNM}", lw = 1.5, color = :magenta, ls = :solid)
+# ψ_NIA: dashed, on top
+plot!(p1, collect(t_pos), abs.(real.(ψ_BC_neg)),
+    label = L"\psi_{NIA}\ (t>0)", lw = 1.5, color = :darkorange, ls = :dash)
+vline!(p1, [0.0], label = "", color = :black, lw = 0.8, ls = :dash)
 
-fig = plot(p1, p2, layout = (2,1), size = (900, 750), dpi = 120,
-           fontfamily = "Computer Modern")
+fig = plot(p1, size = (900, 500), dpi = 150, fontfamily = "Computer Modern")
 savefig(fig, joinpath(@__DIR__, "waveform_decomposition.png"))
-println("waveform_decomposition.png を保存しました")
-fig
+savefig(fig, joinpath(@__DIR__, "waveform_decomposition.pdf"))
+println("waveform_decomposition.png / .pdf を保存しました")
+display(fig)

@@ -25,7 +25,7 @@ function compute_julia_Rin(s, l, m, a, r, ω_grid)
         ω = ω_grid[i]
         ν, p = compute_nu(s, l, m, a, ω; ν_init=ν_prev)
         fn = compute_fn(p, ν)
-        Rin_out[i] = Rin_phys(p, ν, fn, r)
+        Rin_out[i] = Rin(p, ν, fn, r)
         ν_out[i]   = ν
         ν_prev = ν
         i % 20 == 0 && (print("."); flush(stdout))

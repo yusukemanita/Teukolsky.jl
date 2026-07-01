@@ -171,7 +171,7 @@ fig = plot(
     fontfamily = "Computer Modern", dpi = 150,
     legend     = :topright,
     size       = (900, 500),
-    ylims      = (:auto, 1e0))
+    ylims      = (:auto, 2e0))
 
 plot!(fig, t_arr, abs.(real.(ComplexF64.(ψ_real)));
     label  = L"\psi_{\rm real}\ (\omega\ \mathrm{integral})",

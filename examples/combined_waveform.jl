@@ -7,6 +7,7 @@ using LaTeXStrings
 using Printf
 using CSV
 using DataFrames
+using Measures
 
 # ============================================================
 #  3成分の重ね合わせプロット
@@ -152,7 +153,9 @@ fig = plot(
     framestyle = :box, grid = true,
     fontfamily = "Computer Modern", dpi = 120,
     legend     = :topright,
-    size       = (900, 500))
+    size       = (600, 500),
+    ylims      = (1e-15, 1e0),
+    margin     = 5mm)
 
 plot!(fig, collect(t_all), abs.(real.(ψ_dir)),
     label = L"\psi_4\ \mathrm{(numerical)}",

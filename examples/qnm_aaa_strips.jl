@@ -74,4 +74,7 @@ panels = map(strip_imags) do σ
     p
 end
 
-plot(panels..., layout=(2, 2), size=(1100, 800))
+fig = plot(panels..., layout=(2, 2), size=(1100, 800))
+savefig(fig, joinpath(@__DIR__, "..", "figures", "qnm_strips.png"))
+println("Saved: figures/qnm_strips.png")
+display(fig)

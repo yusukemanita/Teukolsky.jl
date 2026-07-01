@@ -150,7 +150,7 @@ println("\nPlotting ...")
 pA = plot(
     xlabel = L"t / M",
     ylabel = L"|\mathrm{Re}[\cdot]|",
-    yscale = :log10, xlim = (0, 600), ylim = (1e-14, 1e-2),
+    yscale = :log10, xlim = (0, 600), ylim = (:auto, 1e-2),
     title  = L"t > 0",
     framestyle = :box, grid = true, legend = :topright,
     fontfamily = "Computer Modern")
