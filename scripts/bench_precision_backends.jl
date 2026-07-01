@@ -14,7 +14,7 @@
 #     Float64xN    ≈  53·N bits   (N = 1..4, the MultiFloats width ceiling)
 #     BigFloat(p)  =   p bits     (p ∈ {53,106,159,212})
 # ============================================================
-using BHPtoolkit
+using Teukolsky
 using Printf
 
 const S, L, M = -2, 2, 2

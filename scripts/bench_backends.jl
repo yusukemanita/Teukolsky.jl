@@ -13,7 +13,7 @@
 #
 #  Run:  julia --project=. scripts/bench_backends.jl
 # ============================================================================
-using BHPtoolkit
+using Teukolsky
 using Printf
 
 const S, L, M, A = -2, 2, 2, 0.0
@@ -78,7 +78,7 @@ bench_amp(B, P, ω) = safe(() -> compute_amplitudes(S, L, M, A, ω;
 # (the native-Acb kernel only accelerates compute_nu).
 function bench_radial(B, P, ω)
     try
-        return BHPtoolkit._with_backend(B, P, A, ω) do a_w, ω_w
+        return Teukolsky._with_backend(B, P, A, ω) do a_w, ω_w
             ν, p = compute_nu(S, L, M, a_w, ω_w)      # type-driven, native backend
             fn   = compute_fn(p, ν; nmax=NMAX)
             r    = real(typeof(ω_w))(R_EVAL)

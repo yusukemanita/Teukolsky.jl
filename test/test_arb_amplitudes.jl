@@ -19,10 +19,10 @@
 #  generously below the observed agreement so they certify "the Arb path is
 #  correct" without being precision-brittle.
 # ============================================================================
-using BHPtoolkit
+using Teukolsky
 using Test
 using Arblib: Arb
-const Bamp = BHPtoolkit
+const Bamp = Teukolsky
 
 const SA, LA, MA = -2, 2, 2
 

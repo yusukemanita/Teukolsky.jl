@@ -1,5 +1,5 @@
 #!/usr/bin/env wolframscript
-(* Export ν(ω) from Teukolsky package for comparison with BHPtoolkit.jl *)
+(* Export ν(ω) from Teukolsky package for comparison with Teukolsky.jl *)
 
 Needs["Teukolsky`"]
 

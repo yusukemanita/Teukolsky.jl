@@ -1,5 +1,5 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
 
 using HDF5
 using Plots

@@ -1,5 +1,5 @@
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, Printf
+using Pkg; Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky, Plots, LaTeXStrings, Printf
 
 # ============================================================
 #  Combined: real-axis waveform + branch cut integrals

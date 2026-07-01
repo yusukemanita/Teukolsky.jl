@@ -21,12 +21,12 @@
 #  Produces the figures in ../../figures and a results table next to this file.
 # ============================================================================
 
-using BHPtoolkit
+using Teukolsky
 using Arblib: Arb
 using Printf
 using Plots
 
-const B = BHPtoolkit
+const B = Teukolsky
 const S, L, M = -2, 2, 2
 const OUTDIR  = joinpath(@__DIR__, "..", "..", "figures")
 const RESULTS = joinpath(@__DIR__, "results.txt")

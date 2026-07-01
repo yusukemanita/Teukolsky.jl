@@ -1,7 +1,7 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
-@testset "BHPtoolkit" begin
+@testset "Teukolsky" begin
 
     @testset "ν computation — Schwarzschild s=-2, l=m=2" begin
         s, l, m, a = -2, 2, 2, 0.0
@@ -172,7 +172,7 @@ using BHPtoolkit
         # H7: even N enforced for the G(-ω)=conj G(ω) waveform grid mirror
         wp = WaveformParams(s=-2, l=2, m=2, a=0.0, N=99, Nt=4, verbose=false)
         @test iseven(wp.N)                       # constructor rounds odd N up (99→100)
-        wp_odd = BHPtoolkit.Waveform.WaveformParams(
+        wp_odd = Teukolsky.Waveform.WaveformParams(
             -2, 2, 2, 0.0, 99, 6.0, -10.0, 10.0, 4, 0.1, false)
         @test_throws ArgumentError compute_waveform(wp_odd)
 
@@ -180,8 +180,8 @@ using BHPtoolkit
         # iteration (no fixed window / silent-zero). Any index converges to a
         # finite, nonzero ratio.
         ν, p = compute_nu(-2, 2, 2, 0.0, 0.3)
-        @test isfinite(BHPtoolkit.Rn_cf(p, ν, 200)) && !iszero(BHPtoolkit.Rn_cf(p, ν, 200))
-        @test isfinite(BHPtoolkit.Ln_cf(p, ν, -200))
+        @test isfinite(Teukolsky.Rn_cf(p, ν, 200)) && !iszero(Teukolsky.Rn_cf(p, ν, 200))
+        @test isfinite(Teukolsky.Ln_cf(p, ν, -200))
         @test compute_fn(p, ν; nmax=160) isa Dict
     end
 

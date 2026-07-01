@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  Kerr geodesic constants of motion (src/kerr_geo_constants.jl)

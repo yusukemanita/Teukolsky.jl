@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Printf
 
 # Test parameters: Schwarzschild, s=-2, l=2, m=2, ω=0.3
@@ -120,16 +120,16 @@ println("="^90)
 r = 6.0
 rm = p.rm
 zhat = complex(ϵ * (r - rm) / 2)
-hp_plus = BHPtoolkit.HUParams(ν + 1 - s + im*ϵ, 2ν + 2, 2im * zhat)
-hp_minus = BHPtoolkit.HUParams(p, ν, zhat)  # for Rup: c = -2iẑ
+hp_plus = Teukolsky.HUParams(ν + 1 - s + im*ϵ, 2ν + 2, 2im * zhat)
+hp_minus = Teukolsky.HUParams(p, ν, zhat)  # for Rup: c = -2iẑ
 
 println("c_plus  = $(hp_plus.c)")
 println("c_minus = $(hp_minus.c)")
 println()
 
 for n in -5:10
-    hu_exact_plus = BHPtoolkit.hu_exact(hp_plus, n)
-    hu_exact_minus = BHPtoolkit.hu_exact(hp_minus, n)
+    hu_exact_plus = Teukolsky.hu_exact(hp_plus, n)
+    hu_exact_minus = Teukolsky.hu_exact(hp_minus, n)
     @printf("n=%3d  |HU_+(exact)| = %.6e  |HU_-(exact)| = %.6e\n",
             n, abs(hu_exact_plus), abs(hu_exact_minus))
 end

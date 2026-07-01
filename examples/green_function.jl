@@ -15,7 +15,7 @@ and r_< = min(r, r'), r_> = max(r, r').
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
 
-using BHPtoolkit
+using Teukolsky
 using Printf
 
 # ── Parameters ──

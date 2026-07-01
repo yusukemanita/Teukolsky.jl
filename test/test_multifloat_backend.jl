@@ -11,7 +11,7 @@
 # ============================================================
 
 using Test
-using BHPtoolkit
+using Teukolsky
 using MultiFloats: MultiFloat, Float64x2, Float64x4
 
 # relative error of a complex value vs a BigFloat reference

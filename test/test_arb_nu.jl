@@ -10,10 +10,10 @@
 # worst 1.1e-49 (Kerr integer, s=0,l=2,m=0,ω=0.9).  Gate set at 1e-30 (30+ digit
 # floor); a 1e-60 gate would false-fail because ball-radius widening on the
 # integer/half branches at large ω costs digits.
-using BHPtoolkit
+using Teukolsky
 using Test
 using Arblib: Arb
-const B = BHPtoolkit
+const B = Teukolsky
 
 # Symmetric ν distance (ν and -ν-1 and conjugates are physically equivalent).
 nu_dist(a, b) = minimum(abs(a - c) for c in (b, -b - 1, conj(b), conj(-b - 1)))

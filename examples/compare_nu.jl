@@ -1,11 +1,11 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
 
-using BHPtoolkit
+using Teukolsky
 using Plots, LaTeXStrings, CSV, DataFrames, Printf
 
 # ============================================================
-#  ν(ω) の比較: BHPtoolkit.jl  vs  Teukolsky package (Mathematica)
+#  ν(ω) の比較: Teukolsky.jl  vs  Teukolsky package (Mathematica)
 # ============================================================
 
 s, l, m = -2, 2, 2
@@ -15,7 +15,7 @@ N_pts   = 300
 ω_max   = 6.0
 ω_grid  = range(ω_min, ω_max; length=N_pts)
 
-# ── BHPtoolkit でν を計算 ──────────────────────────────────
+# ── Teukolsky でν を計算 ──────────────────────────────────
 function compute_nu_sweep(s, l, m, a, ω_grid)
     N = length(ω_grid)
     ν_vals = Vector{ComplexF64}(undef, N)
@@ -31,7 +31,7 @@ function compute_nu_sweep(s, l, m, a, ω_grid)
     return ν_vals
 end
 
-println("BHPtoolkit: computing ν ($N_pts 点) ...")
+println("Teukolsky: computing ν ($N_pts 点) ...")
 ν_bhp = compute_nu_sweep(s, l, m, a, ω_grid)
 println("完了")
 
@@ -49,7 +49,7 @@ function report_jumps(label, ωr, ν_vals; thr=0.05)
     any || println("  ジャンプなし")
 end
 ωr = collect(ω_grid)
-report_jumps("BHPtoolkit", ωr, ν_bhp)
+report_jumps("Teukolsky", ωr, ν_bhp)
 
 # ── Mathematica データ読み込み ──────────────────────────────
 mma_file = joinpath(@__DIR__, "nu_mathematica.csv")
@@ -69,7 +69,7 @@ gr()
 
 # Re(ν)
 fig_re = plot(ωr, real.(ν_bhp),
-    label      = "BHPtoolkit.jl",
+    label      = "Teukolsky.jl",
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"\mathrm{Re}(\nu)",
     title      = latexstring("\\mathrm{Re}(\\nu)\\; (s=$(s),\\,l=$(l),\\,m=$(m),\\,a=$(a))"),
@@ -84,7 +84,7 @@ end
 
 # Im(ν)
 fig_im = plot(ωr, imag.(ν_bhp),
-    label      = "BHPtoolkit.jl",
+    label      = "Teukolsky.jl",
     xlabel     = L"\omega\ [M^{-1}]",
     ylabel     = L"\mathrm{Im}(\nu)",
     title      = latexstring("\\mathrm{Im}(\\nu)\\; (s=$(s),\\,l=$(l),\\,m=$(m),\\,a=$(a))"),
@@ -106,7 +106,7 @@ if has_mma
         label      = L"|\Delta\,\mathrm{Re}(\nu)|",
         xlabel     = L"\omega\ [M^{-1}]",
         ylabel     = L"|\Delta\nu|",
-        title      = "Difference: BHPtoolkit − Mathematica",
+        title      = "Difference: Teukolsky − Mathematica",
         yscale     = :log10,
         lw = 1.5, color = :steelblue,
         framestyle = :box, grid = true,

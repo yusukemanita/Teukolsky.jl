@@ -6,8 +6,8 @@
 """
 
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Dates
 using Printf
 

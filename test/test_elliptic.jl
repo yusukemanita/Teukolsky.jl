@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  Shared elliptic-integral / Jacobi module (src/elliptic_integrals.jl)

@@ -1,7 +1,7 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
 
-using BHPtoolkit
+using Teukolsky
 using Plots
 using LaTeXStrings
 using CSV, DataFrames

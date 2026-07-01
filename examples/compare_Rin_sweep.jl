@@ -1,8 +1,8 @@
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, DelimitedFiles, Printf, Statistics
+using Pkg; Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky, Plots, LaTeXStrings, DelimitedFiles, Printf, Statistics
 
 # ============================================================
-#  Compare Rin(r=10M) vs omega: BHPtoolkit vs Mathematica Teukolsky package
+#  Compare Rin(r=10M) vs omega: Teukolsky vs Mathematica Teukolsky package
 #  s=-2, l=2, m=2, a=0.0
 # ============================================================
 
@@ -47,7 +47,7 @@ branch = Vector{Symbol}(undef, nω)
 for i in 1:nω
     ω = ω_ref[i]
     p = MSTParams(s, l, m, a, ω)
-    rc = real(BHPtoolkit.monodromy_cos2pi_nu(s, l, m, a, ω, p.λ))
+    rc = real(Teukolsky.monodromy_cos2pi_nu(s, l, m, a, ω, p.λ))
     branch[i] = rc < -1 ? :half : (rc > 1 ? :int : :real)
 end
 
@@ -78,7 +78,7 @@ plot!(fig1[1],
     framestyle=:box, grid=true)
 plot!(fig1[1],
     ω_ref, abs.(Rin_julia),
-    label=L"|R_\mathrm{in}|\ \mathrm{(BHPtoolkit)}",
+    label=L"|R_\mathrm{in}|\ \mathrm{(Teukolsky)}",
     color=:crimson, lw=1.5, ls=:dash)
 for ω0 in trans_real2half
     vline!(fig1[1], [ω0], color=:gray, ls=:dot, lw=1, label="")
@@ -96,7 +96,7 @@ plot!(fig1[2],
     framestyle=:box, grid=true)
 plot!(fig1[2],
     ω_ref, real.(Rin_julia),
-    label=L"\mathrm{Re}(R_\mathrm{in})\ \mathrm{(BHPtoolkit)}",
+    label=L"\mathrm{Re}(R_\mathrm{in})\ \mathrm{(Teukolsky)}",
     color=:crimson, lw=1.5, ls=:dash)
 for ω0 in trans_real2half
     vline!(fig1[2], [ω0], color=:gray, ls=:dot, lw=1, label="")
@@ -115,7 +115,7 @@ plot!(fig1[3],
     framestyle=:box, grid=true)
 plot!(fig1[3],
     ω_ref, imag.(Rin_julia),
-    label=L"\mathrm{Im}(R_\mathrm{in})\ \mathrm{(BHPtoolkit)}",
+    label=L"\mathrm{Im}(R_\mathrm{in})\ \mathrm{(Teukolsky)}",
     color=:crimson, lw=1.5, ls=:dash)
 for ω0 in trans_real2half
     vline!(fig1[3], [ω0], color=:gray, ls=:dot, lw=1, label="real→½")

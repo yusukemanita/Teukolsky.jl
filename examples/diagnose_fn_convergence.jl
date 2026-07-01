@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Plots, LaTeXStrings, Printf
 
 # ν = 0.5 + i×η のとき fn[n] が何項必要か調べる

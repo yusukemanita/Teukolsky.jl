@@ -1,8 +1,8 @@
 # Drill-down: which side (Pfaff vs _2F1) loses precision at high precision / z->1?
-using BHPtoolkit
+using Teukolsky
 using HypergeometricFunctions: _₂F₁
 using Printf
-const BHP = BHPtoolkit
+const BHP = Teukolsky
 relerr(x,y) = abs(x-y)/max(abs(y),1e-300)
 
 # Build the SAME params as part (c): mode s=-2,l=2,m=2,a=0.5,ω=0.5, complex ν.

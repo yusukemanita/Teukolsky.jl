@@ -11,7 +11,7 @@
 
 module Waveform
 
-using BHPtoolkit: compute_amplitudes
+using Teukolsky: compute_amplitudes
 
 export WaveformParams, compute_waveform, green_function
 

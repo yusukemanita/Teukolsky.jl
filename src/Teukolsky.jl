@@ -1,5 +1,5 @@
 """
-    BHPtoolkit — Mano-Suzuki-Takasugi formalism for the Teukolsky equation
+    Teukolsky — Mano-Suzuki-Takasugi formalism for the Teukolsky equation
 
 Computes:
 - Renormalized angular momentum ν
@@ -9,7 +9,7 @@ Computes:
 Following Sasaki & Tagoshi, Living Rev. Rel. 6 (2003) 6.
 Convention: M = 1 (black hole mass), G = c = 1.
 """
-module BHPtoolkit
+module Teukolsky
 
 using LinearAlgebra, SpecialFunctions, Printf
 using Arblib: Arb, Acb   # type names only (Arb<:AbstractFloat); see arb_compat.jl
@@ -78,4 +78,4 @@ function __init__()
     return nothing
 end
 
-end  # module BHPtoolkit
+end  # module Teukolsky

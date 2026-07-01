@@ -23,7 +23,7 @@ cases = {
 
 rsamples = {3, 6, 12, 30};
 
-stream = OpenWrite["/Users/yusuke/work/BHPtoolkit.jl/test/numint_ref.txt"];
+stream = OpenWrite["/Users/yusuke/work/Teukolsky.jl/test/numint_ref.txt"];
 
 Do[
   Module[{s, l, m, a, om, wp, aP, omP, R, lines},

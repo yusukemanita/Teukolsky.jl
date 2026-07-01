@@ -27,6 +27,6 @@ Do[
   {i, Length[omegas]}
 ];
 
-outfile = "/Users/yusuke/work/BHPtoolkit.jl/test/green_function_mathematica.txt";
+outfile = "/Users/yusuke/work/Teukolsky.jl/test/green_function_mathematica.txt";
 Export[outfile, StringJoin[Riffle[lines, "\n"]], "Text"];
 Print["Done -> ", outfile];

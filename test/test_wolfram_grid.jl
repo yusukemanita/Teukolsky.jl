@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  Quantitative cross-check vs Wolfram Teukolsky 1.1.1

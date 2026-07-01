@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Printf
 
 # Diagnose: ΔRup vs Rdown の漸近的ふるまいを確認

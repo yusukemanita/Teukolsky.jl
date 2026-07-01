@@ -5,7 +5,7 @@
 #
 #  Strategy: try to PROVE IT WRONG.
 #  (a) independence: re-implement the ORIGINAL numerator (six fresh
-#      _cgamma per term) and compare full Knu to BHPtoolkit.compute_Knu
+#      _cgamma per term) and compare full Knu to Teukolsky.compute_Knu
 #      across a mode grid at BigFloat-256, for ν and -ν-1, r=0,1,2,
 #      and BOTH compute_Knu and compute_Knu_mero.
 #  (b) amplitudes vs Wolfram (wolfram_ref_hp.txt)
@@ -13,10 +13,10 @@
 #  (d) Wronskian r-independence (radial untouched)
 #  (e) edge: nonzero-r path + mero/nufixed references
 # ============================================================
-using BHPtoolkit
+using Teukolsky
 using Printf
 
-const B = BHPtoolkit
+const B = Teukolsky
 const cg = B._cgamma
 const poch = B.pochhammer
 

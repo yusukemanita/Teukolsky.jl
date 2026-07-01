@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  B5 — point-particle source convolution + fluxes

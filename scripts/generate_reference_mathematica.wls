@@ -66,6 +66,6 @@ Do[
   {i, Length[cases]}
 ];
 
-outfile = "/Users/yusuke/work/BHPtoolkit.jl/test/reference_values_mathematica.jl";
+outfile = "/Users/yusuke/work/Teukolsky.jl/test/reference_values_mathematica.jl";
 Export[outfile, StringJoin[Riffle[lines, "\n"]], "Text"];
 Print["Done -> ", outfile];

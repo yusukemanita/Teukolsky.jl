@@ -1,6 +1,6 @@
 # Clean benchmark of the BigFloat ν monodromy solver.
 # Warmup once, then minimum of N @elapsed for compute_nu(-2,2,2,a,ω).
-using BHPtoolkit
+using Teukolsky
 using Printf
 
 const S, L, M = -2, 2, 2

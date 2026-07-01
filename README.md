@@ -1,4 +1,4 @@
-# BHPtoolkit.jl
+# Teukolsky.jl
 
 A Julia implementation of the **Mano–Suzuki–Takasugi (MST)** formalism for the
 homogeneous [Teukolsky equation](https://en.wikipedia.org/wiki/Teukolsky_equation),
@@ -35,9 +35,9 @@ The package lives in this repository with a standard `Project.toml`.
 
 ```julia
 julia> using Pkg
-julia> Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+julia> Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
 julia> Pkg.instantiate()
-julia> using BHPtoolkit
+julia> using Teukolsky
 ```
 
 Dependencies: `HypergeometricFunctions`, `SpecialFunctions`, `LinearAlgebra`, `Printf`.
@@ -49,7 +49,7 @@ Dependencies: `HypergeometricFunctions`, `SpecialFunctions`, `LinearAlgebra`, `P
 ### Homogeneous radial solutions
 
 ```julia
-using BHPtoolkit
+using Teukolsky
 
 # Teukolsky radial functions for s=-2, l=m=2, Schwarzschild, Mω = 0.5
 tr = TeukolskyRadial(-2, 2, 2, 0.0, 0.5)
@@ -93,7 +93,7 @@ Both `compute_nu` and `compute_amplitudes` accept a `backend` (a `Symbol`) keywo
 | `:acb` | native-`Acb` nu-solver kernel | fast nu solver; for amplitudes equivalent to `:arb` |
 
 ```julia
-using BHPtoolkit
+using Teukolsky
 compute_nu(-2, 2, 2, 0.0, 0.5; backend=:multifloat, precision=256)
 compute_nu(-2, 2, 2, 0.0, 0.5; backend=:arb, precision=256)
 compute_nu(-2, 2, 2, 0.0, 0.5; backend=:acb, precision=256)   # fast native-Acb nu
@@ -308,7 +308,7 @@ amplitudes & radial:
 
 ```
 src/
-  BHPtoolkit.jl         module + exports
+  Teukolsky.jl         module + exports
   params.jl             MSTParams, spheroidal eigenvalue λ
   recurrence.jl         α_n / β_n / γ_n MST recurrence coefficients
   nu_solver.jl          renormalized angular momentum ν (monodromy / continued fraction)

@@ -1,8 +1,8 @@
 # Skeptic verification of the optimized BigFloat ν monodromy solver.
 # Tries to prove the OPTIMIZED ν is wrong or less accurate than before.
-using BHPtoolkit
+using Teukolsky
 using Printf
-const B = BHPtoolkit
+const B = Teukolsky
 
 # ----------------------------------------------------------------------
 # Independent reference: the PRE-CHANGE monodromy_cos2pi_nu, extracted

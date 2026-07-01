@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 using LinearAlgebra: norm
 
 # ============================================================

@@ -1,7 +1,7 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
 
-using BHPtoolkit
+using Teukolsky
 using Printf
 
 # ============================================================
@@ -30,10 +30,10 @@ function compute_G_branch(p, ν, fn_p, ν_neg, fn_m; nmax=40)
     s, ϵ, κ = p.s, p.ϵ, p.κ
     ω_c = p.ω
 
-    Ap  = BHPtoolkit.compute_Aplus(p, ν, fn_p; nmax=nmax)
-    Am  = BHPtoolkit.compute_Aminus(p, ν, fn_p; nmax=nmax)
-    Kν  = BHPtoolkit.compute_Knu(p, ν,     fn_p; nmax=nmax)
-    Kνn = BHPtoolkit.compute_Knu(p, ν_neg, fn_m; nmax=nmax)
+    Ap  = Teukolsky.compute_Aplus(p, ν, fn_p; nmax=nmax)
+    Am  = Teukolsky.compute_Aminus(p, ν, fn_p; nmax=nmax)
+    Kν  = Teukolsky.compute_Knu(p, ν,     fn_p; nmax=nmax)
+    Kνn = Teukolsky.compute_Knu(p, ν_neg, fn_m; nmax=nmax)
 
     phase      = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
     phase_conj = exp( im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))

@@ -1,5 +1,5 @@
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, Printf, Statistics, SpecialFunctions
+using Pkg; Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky, Plots, LaTeXStrings, Printf, Statistics, SpecialFunctions
 
 # ============================================================
 #  Test: Daalhuis-Olver monodromy method for cos(2πν)
@@ -55,7 +55,7 @@ function _dh_core(spin::Int, l::Int, m::Int, a, ω, λ_ang;
     τ  = (ε - m*q) / κ
 
     # λ_ang = p.λ is already the full Mathematica Λ (= A_{lm}, eigenvalue of angular eq.)
-    # BHPtoolkit convention: p.λ ≡ Λ (not Λ-s(s+1)); matches existing monodromy_cos2pi_nu
+    # Teukolsky convention: p.λ ≡ Λ (not Λ-s(s+1)); matches existing monodromy_cos2pi_nu
     Λ  = BF(λ_ang)
 
     # CHE parameters (Mathematica convention)
@@ -174,7 +174,7 @@ for ω in test_omegas
     p   = MSTParams(spin_test, l_test, m_test, a_test, ω)
     λ   = p.λ
 
-    c2pn_exist = BHPtoolkit.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, λ)
+    c2pn_exist = Teukolsky.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, λ)
     c2pn_dh, conv, n_use = monodromy_cos2pi_nu_DH(spin_test, l_test, m_test, a_test, ω, λ)
 
     diff = abs(c2pn_exist - c2pn_dh)
@@ -199,7 +199,7 @@ for ω in [0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 2.5]
     p   = MSTParams(spin_test, l_test, m_test, 0.9, ω)
     λ   = p.λ
 
-    c2pn_exist = BHPtoolkit.monodromy_cos2pi_nu(spin_test, l_test, m_test, 0.9, ω, λ)
+    c2pn_exist = Teukolsky.monodromy_cos2pi_nu(spin_test, l_test, m_test, 0.9, ω, λ)
     c2pn_dh, conv, n_use = monodromy_cos2pi_nu_DH(spin_test, l_test, m_test, 0.9, ω, λ)
 
     diff = abs(c2pn_exist - c2pn_dh)
@@ -220,7 +220,7 @@ rc_dh      = Float64[]
 for ω in ω_sweep
     p  = MSTParams(spin_test, l_test, m_test, a_test, ω)
     λ  = p.λ
-    c_ex = BHPtoolkit.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, λ)
+    c_ex = Teukolsky.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, λ)
     c_dh, _, _ = monodromy_cos2pi_nu_DH(spin_test, l_test, m_test, a_test, ω, λ)
     push!(rc_exist, real(c_ex))
     push!(rc_dh,    real(c_dh))
@@ -266,7 +266,7 @@ rc_exist_vals = Float64[]
 rc_dh_vals    = Float64[]
 for ω in range(1.9, 2.1; length=21)
     p = MSTParams(spin_test, l_test, m_test, a_test, ω)
-    push!(rc_exist_vals, real(BHPtoolkit.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, p.λ)))
+    push!(rc_exist_vals, real(Teukolsky.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, p.λ)))
     c, _, _ = monodromy_cos2pi_nu_DH(spin_test, l_test, m_test, a_test, ω, p.λ)
     push!(rc_dh_vals, real(c))
 end
@@ -288,7 +288,7 @@ println("\nPrecision comparison on real branch (|rc|≤1), a=0:")
 println("-"^82)
 for ω in range(0.05, 0.35; length=11)
     p = MSTParams(spin_test, l_test, m_test, a_test, ω)
-    c_ex = BHPtoolkit.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, p.λ)
+    c_ex = Teukolsky.monodromy_cos2pi_nu(spin_test, l_test, m_test, a_test, ω, p.λ)
     c_dh, cv, nu = monodromy_cos2pi_nu_DH(spin_test, l_test, m_test, a_test, ω, p.λ)
     rdiff = abs(c_ex - c_dh) / max(abs(c_dh), 1e-30)
     @printf("ω=%5.3f | %+22.14e | %+22.14e | %.3e  | %s\n",

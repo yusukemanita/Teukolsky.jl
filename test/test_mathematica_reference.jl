@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  Mathematica BHPToolkit (Teukolsky-1.1.1) との比較テスト

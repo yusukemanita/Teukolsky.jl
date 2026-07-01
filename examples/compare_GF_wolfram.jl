@@ -1,14 +1,14 @@
 #!/usr/bin/env julia
 # ============================================================
 #  Compare G(ω) = Rin(r=10) / (2iω Binc)
-#  Julia (BHPtoolkit) vs Wolfram Teukolsky package
+#  Julia (Teukolsky) vs Wolfram Teukolsky package
 #
 #  Parameters: s=-2, l=2, m=2, a=0
 #  ω grid: 0.01k + 0.001i,  k=1..200
 #  Wolfram CSV: scripts/GF_wolfram.csv  (run scripts/generate_GF_comparison.wls first)
 # ============================================================
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, Printf, DelimitedFiles, Statistics
+using Pkg; Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky, Plots, LaTeXStrings, Printf, DelimitedFiles, Statistics
 
 # ── Parameters ───────────────────────────────────────────────
 s, l, m = -2, 2, 2

@@ -1,5 +1,5 @@
-using Pkg; Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit, Plots, LaTeXStrings, Printf
+using Pkg; Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky, Plots, LaTeXStrings, Printf
 
 # ============================================================
 #  Plot Rin_raw vs Rin_phys for a=0.0, r=10M
@@ -29,10 +29,10 @@ function compute_Rin_sweep(s, l, m, a, r, ω_grid, nω)
     ν, _ = compute_nu(s, l, m, a, ω; ν_init=ν_prev)
     fn = compute_fn(p, ν; nmax=40)
 
-    rc = real(BHPtoolkit.monodromy_cos2pi_nu(s, l, m, a, ω, p.λ))
+    rc = real(Teukolsky.monodromy_cos2pi_nu(s, l, m, a, ω, p.λ))
     branch_vals[i] = rc < -1 ? :half : (rc > 1 ? :int : :real)
 
-    Rin_raw_vals[i]  = BHPtoolkit._Rin_raw(p, ν, fn, r)
+    Rin_raw_vals[i]  = Teukolsky._Rin_raw(p, ν, fn, r)
     Rin_phys_vals[i] = Rin(p, ν, fn, r)
     ν_vals[i]        = ν
         ν_prev = ν

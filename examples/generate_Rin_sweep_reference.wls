@@ -1,5 +1,5 @@
 #!/usr/bin/env wolframscript
-(* Generate Rin(r=10) vs omega sweep for comparison with BHPtoolkit *)
+(* Generate Rin(r=10) vs omega sweep for comparison with Teukolsky *)
 (* s=-2, l=2, m=2, a=0.0, r=10M, omega in [0.05, 1.0] *)
 
 Needs["Teukolsky`"];

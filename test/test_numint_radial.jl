@@ -1,5 +1,5 @@
 using Test
-using BHPtoolkit
+using Teukolsky
 
 # ============================================================
 #  B3 — NumericalIntegration radial backend
@@ -46,7 +46,7 @@ using BHPtoolkit
             for r in (4.0, 7.0)
                 h = 1e-5
                 Rpp_fd = (dRin(p,ν,fn,r+h) - dRin(p,ν,fn,r-h)) / (2h)
-                _, Rpp_ode = BHPtoolkit._teuk_radial_rhs(r, Rin(p,ν,fn,r), dRin(p,ν,fn,r),
+                _, Rpp_ode = Teukolsky._teuk_radial_rhs(r, Rin(p,ν,fn,r), dRin(p,ν,fn,r),
                                                          s, m, a, complex(ω), p.λ)
                 @test isapprox(Rpp_fd, Rpp_ode; rtol=1e-5)   # FD-limited
             end

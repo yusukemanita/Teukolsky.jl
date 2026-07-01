@@ -2,11 +2,11 @@
 #  SKEPTIC verification of change #2: BigFloat 2F1 flux fix (_h2f1_pfaff)
 #  Adversarial checks (a)-(e). Prints machine-parseable RESULT lines.
 # ============================================================
-using BHPtoolkit
+using Teukolsky
 using HypergeometricFunctions: _₂F₁
 using Printf
 
-const BHP = BHPtoolkit
+const BHP = Teukolsky
 
 # ---- Instrument the fallback to count how often Pfaff engages ----
 # Redefine _h2f1_robust inside the module to increment a counter on the

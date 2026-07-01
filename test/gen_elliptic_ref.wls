@@ -16,7 +16,7 @@ fmt[x_] := StringReplace[
   ToString[N[x, 30], InputForm],
   {RegularExpression["`[0-9.]*"] -> "", "*^" -> "e"}];
 
-stream = OpenWrite["/Users/yusuke/work/BHPtoolkit.jl/test/elliptic_ref.txt"];
+stream = OpenWrite["/Users/yusuke/work/Teukolsky.jl/test/elliptic_ref.txt"];
 
 (* sample parameters: include m near 0 and near 1, negative n, phi inside and
    outside [-Pi/2, Pi/2] *)

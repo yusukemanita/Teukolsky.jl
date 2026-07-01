@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Printf
 
 s, l, m, a = -2, 2, 2, 0.0

@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate("/Users/yusuke/work/BHPtoolkit.jl")
-using BHPtoolkit
+Pkg.activate("/Users/yusuke/work/Teukolsky.jl")
+using Teukolsky
 using Printf
 
 # Reference from qnm Python package (M=1 units, same convention)
@@ -47,9 +47,9 @@ for (n, ωref) in enumerate(QNM_REF)
     try
         ν, p = compute_nu(s, l, m, a, ωref)
         # Evaluate residual of the CF equation
-        R1  = BHPtoolkit.Rn_cf(p, ν, 1)
-        Lm1 = BHPtoolkit.Ln_cf(p, ν, -1)
-        g0  = BHPtoolkit.βn(p, ν, 0) + BHPtoolkit.αn(p, ν, 0)*R1 + BHPtoolkit.γn(p, ν, 0)*Lm1
+        R1  = Teukolsky.Rn_cf(p, ν, 1)
+        Lm1 = Teukolsky.Ln_cf(p, ν, -1)
+        g0  = Teukolsky.βn(p, ν, 0) + Teukolsky.αn(p, ν, 0)*R1 + Teukolsky.γn(p, ν, 0)*Lm1
         @printf("n=%-2d  (%+.6f%+.6fim)  ν=(%+.6f%+.6fim)  |g0|=%.2e\n",
                 n, real(ωref), imag(ωref), real(ν), imag(ν), abs(g0))
     catch e

@@ -36,9 +36,9 @@
 
 using MultiFloats: MultiFloat
 
-# ── (1) enable real transcendentals (called from BHPtoolkit.__init__) ────────
+# ── (1) enable real transcendentals (called from Teukolsky.__init__) ────────
 # `use_bigfloat_transcendentals()` evaluates Base method definitions, so it must
-# run at load time (not precompile); BHPtoolkit's __init__ calls this.  Idempotent.
+# run at load time (not precompile); Teukolsky's __init__ calls this.  Idempotent.
 _enable_multifloat_transcendentals() = MultiFloats.use_bigfloat_transcendentals()
 
 # ── (2) 2-argument atan (the one gap use_bigfloat_transcendentals misses) ────
