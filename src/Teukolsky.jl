@@ -21,7 +21,6 @@ export compute_amplitudes, compute_amplitudes_nufixed
 export compute_amplitudes_mero, compute_amplitudes_nufixed_mero
 export compute_q, compute_qtilde
 export compute_mst_core, qtilde_from_core, q_from_core, mst_ctrans
-export compute_mst_core_acb
 export suggest_mst_precision, MST_F64X4_TRUST
 export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
@@ -52,14 +51,11 @@ include("multifloat_compat.jl")  # MultiFloat shims + precision-backend dispatch
 include("precision_hint.jl")     # |ω|-driven (backend,bits,nmax) predictor (additive)
 include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
-include("recurrence_acb.jl")  # native in-place Acb f^ν_n kernel (M3)
 include("pn_series.jl")   # PNSeries ring (B6)
 include("pn.jl")          # post-Newtonian low-frequency series (B6)
 include("nu_solver.jl")
 include("amplitudes.jl")
-include("amplitudes_acb.jl")  # native in-place Acb A^ν_± kernels (M3)
 include("branch_cut.jl")
-include("mst_core_acb.jl")  # fully-native-Acb core (ν + fn + A±) (M3)
 include("hypergeometric.jl")
 include("radial_in.jl")
 include("radial_up.jl")
