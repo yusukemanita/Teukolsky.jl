@@ -274,6 +274,51 @@ function _cf_ratios_acb!(ratios::Vector{Acb}, ctx::_FnCtxAcb, dir::Int,
 end
 
 """
+    _compute_fn_acb_vec(p, ν; nmax=80, nmax_cf=2000, tol=-1) -> Vector{Acb}
+
+Core-private variant of [`compute_fn_acb`](@ref): identical values, but the
+minimal solution is returned as a DENSE `Vector{Acb}` `fv` with
+`fv[n + nmax + 1] = f^ν_n` (n = -nmax…nmax), skipping the per-value
+`Complex{Arb}` boxing of the public Dict.  The CF ratios come from ONE anchor
+Lentz call per direction plus O(1) in-place peeling per n
+([`_cf_ratios_acb!`](@ref)).  Consumed directly by the internal A^ν_± vector
+kernels (`_Aplus_acb`/`_Aminus_acb`) and by `compute_mst_core_acb`, which
+builds the public Dict once via [`_fn_dict_from_vec`](@ref).
+"""
+function _compute_fn_acb_vec(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
+    prec = precision(Arb)
+    ctx  = _build_fn_ctx_acb(p, ν; prec=prec)
+    tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
+    off = nmax + 1                       # fv[n + off] = f_n
+    fv = Vector{Acb}(undef, 2*nmax + 1)
+    fv[off] = Acb(1; prec=prec)          # f_0 = 1
+    nmax == 0 && return fv
+    ratios = [Acb(0; prec=prec) for _ in 1:nmax]
+    # forward n = 1..nmax:  f_n = R_n · f_{n-1}
+    _cf_ratios_acb!(ratios, ctx, +1, nmax, nmax_cf, tolbf)
+    for n in 1:nmax
+        fv[n + off] = Acb(0; prec=prec)
+        Arblib.mul!(fv[n + off], fv[n - 1 + off], ratios[n]; prec=prec)
+    end
+    # backward n = -1..-nmax:  f_{-k} = L_{-k} · f_{-k+1}
+    _cf_ratios_acb!(ratios, ctx, -1, nmax, nmax_cf, tolbf)
+    for k in 1:nmax
+        fv[-k + off] = Acb(0; prec=prec)
+        Arblib.mul!(fv[-k + off], fv[-k + 1 + off], ratios[k]; prec=prec)
+    end
+    return fv
+end
+
+"""
+    _fn_dict_from_vec(fv, nmax) -> Dict{Int,Complex{Arb}}
+
+Public-contract Dict (`fn[n] = f^ν_n`) built once from the dense Acb vector of
+[`_compute_fn_acb_vec`](@ref).
+"""
+_fn_dict_from_vec(fv::Vector{Acb}, nmax::Int) = Dict{Int, Complex{Arb}}(
+    n => Complex{Arb}(fv[n + nmax + 1]) for n in -nmax:nmax)
+
+"""
     compute_fn_acb(p, ν; nmax=80, nmax_cf=2000, tol=-1) -> Dict{Int,Complex{Arb}}
 
 Native-Acb evaluation of the minimal solution f^ν_n for -nmax ≤ n ≤ nmax
@@ -285,27 +330,6 @@ peeling per n ([`_cf_ratios_acb!`](@ref)) — the same O(nmax·depth) → O(nmax
 strategy as the generic `_cf_ratios`, on top of the kernel's zero-allocation
 arithmetic.
 """
-function compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
-    prec = precision(Arb)
-    ctx  = _build_fn_ctx_acb(p, ν; prec=prec)
-    tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
-    f = Dict{Int, Complex{Arb}}()
-    f[0] = Complex{Arb}(1)
-    ratios = [Acb(0; prec=prec) for _ in 1:max(nmax, 1)]
-    run = Acb(1; prec=prec)       # running product f_{n∓1}
-    # forward: f_n = R_n · f_{n-1}
-    _cf_ratios_acb!(ratios, ctx, +1, nmax, nmax_cf, tolbf)
-    Arblib.set!(run, Acb(1; prec=prec))
-    for n in 1:nmax
-        Arblib.mul!(run, run, ratios[n]; prec=prec)
-        f[n] = Complex{Arb}(run)
-    end
-    # backward: f_{-k} = L_{-k} · f_{-k+1}
-    _cf_ratios_acb!(ratios, ctx, -1, nmax, nmax_cf, tolbf)
-    Arblib.set!(run, Acb(1; prec=prec))
-    for k in 1:nmax
-        Arblib.mul!(run, run, ratios[k]; prec=prec)
-        f[-k] = Complex{Arb}(run)
-    end
-    return f
-end
+compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1) =
+    _fn_dict_from_vec(
+        _compute_fn_acb_vec(p, ν; nmax=nmax, nmax_cf=nmax_cf, tol=tol), nmax)

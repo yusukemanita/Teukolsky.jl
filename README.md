@@ -82,26 +82,76 @@ end
 
 ### Selectable precision backends
 
-Both `compute_nu` and `compute_amplitudes` accept a `backend` (a `Symbol`) keyword together with `precision` (an `Int`, in bits) that selects the working float type, as an alternative to passing typed arguments inside `setprecision`.
+`compute_nu` and `compute_amplitudes` accept a `backend` (`Symbol`) keyword together
+with `precision` (`Int`, in bits).  Two backends cover all use cases:
 
-| backend | working type | notes |
-|---------|--------------|-------|
-| `:float64` | `Float64` | fast double precision |
-| `:bigfloat` | `BigFloat` at `precision` bits | default arbitrary precision |
-| `:multifloat` | `Float64xN` (`N` from `precision/53`) | extended mantissa, `Float64` exponent range |
-| `:arb` | `Arb` ball at `precision` bits | rigorous ball arithmetic |
-| `:acb` | native-`Acb` nu-solver kernel | fast nu solver; for amplitudes equivalent to `:arb` |
+| backend | working type | when to use |
+|---------|--------------|-------------|
+| `:float64` | `Float64` | fast double precision — small \|ω\| only |
+| `:acb` | native in-place Acb kernels at `precision` bits | everything else |
+
+**`:float64` breaks down at large \|ω\|.**  The MST series loses digits to
+cancellation like ~10^(3.4·\|ω\|), so 53-bit doubles stop resolving the answer
+beyond \|ω\| ≈ 1–2.  From there, use `:acb` at the bit-count suggested by
+`suggest_mst_precision(ω)` — a measured envelope that jumps straight to the
+precision the frequency needs.
+
+(`BigFloat` also works at any precision — every kernel is type-generic — but MPFR
+heap-allocates every operation, while the `:acb` chain runs zero-allocation
+in-place kernels (ν monodromy, CF-peeled `f_n`, A±) plus FLINT's rigorous
+`acb_hypgeom_u`: identical values, measured 2.8–7.6× faster end-to-end.
+`:acb` wins; use it.)
 
 ```julia
 using Teukolsky
-compute_nu(-2, 2, 2, 0.0, 0.5; backend=:multifloat, precision=256)
-compute_nu(-2, 2, 2, 0.0, 0.5; backend=:arb, precision=256)
-compute_nu(-2, 2, 2, 0.0, 0.5; backend=:acb, precision=256)   # fast native-Acb nu
-amp = compute_amplitudes(-2, 2, 2, 0.0, 0.5; backend=:arb, precision=256)
-amp = compute_amplitudes(-2, 2, 2, 0.0, 0.5; backend=:multifloat, precision=256)
+compute_nu(-2, 2, 2, 0.7, 4.3im; backend=:acb, precision=320)
+amp = compute_amplitudes(-2, 2, 2, 0.7, 4.3im; backend=:acb, precision=320)
+
+suggest_mst_precision(4.3im)   # → (backend = :acb, bits = 320, nmax = 61)
 ```
 
-The Arb backend was validated at large complex frequency (see `examples/arb_validation/`), agreeing with the BigFloat path to 50–74 digits across `|omega|` in `{2, 10}`, with high-`|omega|` conditioning recovered by raising precision.
+### Choosing precision automatically: `suggest_mst_precision`
+
+At large \|ω\| the required precision is set by the physics (the ~10^(3.4·\|ω\|)
+cancellation), not by taste.  `suggest_mst_precision(ω; l=2, margin=1.0)` returns
+the measured envelope — **which backend, how many bits, how many series terms** —
+so a driver jumps straight to a working configuration instead of failing upward
+through a retry ladder:
+
+```julia
+suggest_mst_precision(0.5im)   # → (backend = :multifloat, bits = 212, nmax = 40)
+suggest_mst_precision(10im)    # → (backend = :acb,        bits = 768, nmax = 112)
+```
+
+Consume it like this (for `backend = :acb`, pass `Arb` inputs inside
+`setprecision` — `compute_mst_core` dispatches to the native in-place chain):
+
+```julia
+using Arblib: Arb
+
+h = suggest_mst_precision(ω; l=l)
+setprecision(Arb, h.bits) do
+    ωA   = Complex{Arb}(Arb(real(ω)), Arb(imag(ω)))
+    core = compute_mst_core(s, l, m, Arb(a), ωA; nmax=h.nmax)
+    qt   = qtilde_from_core(core)                     # branch-cut coefficient q̃
+    ru   = Rup(core.p, core.ν, core.fn, Arb(r); nmax=h.nmax, ctrans=mst_ctrans(core))
+    qt * ru
+end
+```
+
+Three rules of use:
+
+1. **It is a starting point, not a guarantee** — keep a cheap verify-and-escalate
+   backstop in production (check the result is finite; on failure climb a BigFloat
+   ladder starting at `h.bits`).  The predictor mildly over-provisions on purpose,
+   so a single solve almost always suffices.
+2. **Don't hand it fewer bits hoping for speed.**  Below the envelope you get
+   finite *garbage*, not an error — that failure mode is exactly what this
+   function exists to prevent.
+3. **More delivered digits = more bits**, roughly 2^(bits − 3.4·\|ω\|·log₂10).
+   Raise `margin` (or add bits) if you need extra digits at fixed ω.  `nmax` is
+   calibrated for the s=−2 branch-cut use case; treat it as a floor for unusual
+   regimes.
 
 ### Spin-weighted spheroidal harmonics
 
@@ -202,105 +252,41 @@ integrals, geodesics, PN series, and point-particle fluxes.
 
 ---
 
-## Performance vs. the Mathematica Teukolsky package
+## Performance vs. the Mathematica Teukolsky paclet
 
-Head-to-head timing of the *same* quantities (s=−2, l=m=2) against the Mathematica
-`Teukolsky` paclet, on one machine, measured sequentially (one process at a time,
-warm-up excluded). The short answer: **which is faster depends on precision.**
+Same quantities, same machine, both at ~**100-digit working precision**
+(Julia `:acb` at 336 bits; paclet inputs at 100 digits), s=−2, l=m=2, a=0.7,
+measured sequentially with warm-up excluded.  Operations: the incidence
+amplitude `Binc` and the ingoing radial solution `Rin(10)`, at large \|ω\| on
+the real axis and at a complex angle — the high-frequency / branch-cut regime
+the MST engine is built for.
 
-| Operation | Float64 | BigFloat-256 (≈77 digits) |
+| quantity, ω | Julia `:acb` | `Teukolsky` paclet |
 |---|---|---|
-| ν (renormalized angular momentum) | **Julia ~90×** | Mathematica ~10× |
-| radial solution construction | **Julia ~200×** | **≈ parity** |
-| radial evaluation at a point | **Julia ~660×** | **Julia ~4.5×** |
-| point-particle energy flux | **Julia ~96×** | both correct (Julia faster) |
+| `Binc`, ω = 10 | **0.03 s — 99 digits** | 0.27 s — 4.6 certified digits (~12 correct) |
+| `Rin(10)`, ω = 10 | **0.08 s — 89 digits** | 0.32 s — 0 digits (magnitude off by 10⁵) |
+| `Binc`, ω = 10·e^{iπ/3} | **0.06 s — 34 digits** | fails (`ComplexInfinity`) |
+| `Rin(10)`, ω = 10·e^{iπ/3} | **0.02 s — 26 digits** | 0.38 s — 0 digits |
 
-**Float64.** Julia is overwhelmingly faster (90–660×) — though this is the least
-fair comparison: Mathematica's machine-precision MST is a self-flagged degraded mode
-(`RenormalizedAngularMomentum` warns it "only works reliably with arbitrary
-precision"), and the gap is partly Mathematica's per-call interpreter overhead against
-Julia's sub-100-µs calls.
+"digits" = decimal digits of agreement with a 700-bit reference (Julia) resp.
+the paclet's own certified significance.  At the complex angle both engines face
+the same intrinsic ~10^(3.4·\|ω\|) cancellation: the 34/26 digits delivered from
+100 working digits ARE that conditioning, and more digits are bought with more
+bits (`suggest_mst_precision` picks them automatically).  The paclet's adaptive
+precision cannot recover past its inputs at this frequency — it self-reports
+≤4.6 good digits on the real axis and fails outright at the complex angle
+(`Power::infy` → `ComplexInfinity`).
 
-**BigFloat.** This is where Mathematica's tuned arbitrary-precision kernel is strong.
-The renormalized angular momentum ν still favours Mathematica (~10×). But radial
-**construction** is now at parity at 256-bit and Julia *overtakes* it at 512-bit
-(0.92 s vs 1.59 s, ~1.7×), and radial **evaluation** stays Julia-faster at every
-precision (~4.5× at 256-bit). Both packages agree on the energy flux to 16 digits
-(`2.684397739103742e-5` for l=m=2, a=0, p=10).
+Where both engines deliver full precision (moderate \|ω\|), the difference is
+speed alone: the `:acb` chain — in-place ν monodromy kernel, one-anchor CF-ratio
+peeling for `f_n`, in-place A±, rigorous `acb_hypgeom_u` radial seeds — measures
+3–20× faster than the paclet and 2.8–7.6× faster than Julia's own BigFloat path
+at equal bits, with values verified against algorithm-independent arbiters
+(bottom-up CF evaluation, Miller recurrence, exact-π MPFR rebuilds).
 
-Two recent fixes drove the BigFloat numbers (see git history):
-- a Pochhammer-recurrence rewrite of the `K_ν` matching coefficient cut BigFloat
-  radial construction **1.76 s → 0.53 s at 256-bit** (3.3×; 4.9× at 512-bit), since
-  it eliminates ~480 full-precision Γ evaluations per solve;
-- a gamma-free Pfaff fallback in the ₂F₁ evaluator fixed a `DomainError` that
-  previously crashed BigFloat point-particle fluxes (real-ν / low-frequency regime).
-
-**Bottom line:** Julia for fast Float64 sweeps and for evaluating already-built
-solutions; either package for high-precision construction (Julia leads at ≥512-bit,
-Mathematica leads on ν). Caveats: BigFloat-bit ↔ decimal-digit matching is nominal,
-Mathematica uses adaptive guard digits, single machine / single thread.
-
-### Backend performance (Binc, Bref, Rin, Rup)
-
-Cross-backend timing on Schwarzschild (`a=0`, `s=−2`, `l=m=2`, `nmax=80`, radial
-evaluated at `r=10`), Julia 1.12.3, reported as the **minimum of 8 `@elapsed`
-runs** with warm-up and GC excluded, in a single process (timings not skewed by
-contention). The `ν` solver lists all five backends because `:arb` and `:acb`
-genuinely differ there; for the amplitudes and radial functions `:arb` and `:acb`
-run the *identical* `Complex{Arb}` path, so they share one **Arb/Acb** row.
-
-**ω = 0.1** — `ν` solver (`compute_nu`):
-
-| Float64 | BigFloat-256 | MultiFloat-x4 | Arb-256 | Acb-256 |
-|---|---|---|---|---|
-| 52.5 µs | 34.6 ms | 27.6 ms | 106 ms | **4.6 ms** |
-
-amplitudes & radial:
-
-| Backend | Binc/Bref | Rin | Rup |
-|---|---|---|---|
-| Float64 | 779 µs | 63.0 µs | 205 µs |
-| BigFloat-256 | 353 ms | 89.3 ms | 68.8 ms |
-| MultiFloat-x4 | 118 ms | 58.7 ms | 33.7 ms |
-| Arb/Acb-256 | 501 ms | 12.1 ms | 42.1 ms |
-
-**ω = 10** — `ν` solver (`compute_nu`):
-
-| Float64 | BigFloat-256 | MultiFloat-x4 | Arb-256 | Acb-256 |
-|---|---|---|---|---|
-| 60.5 µs | 67.2 ms | 55.5 ms | 111 ms | **5.5 ms** |
-
-amplitudes & radial:
-
-| Backend | Binc/Bref | Rin | Rup |
-|---|---|---|---|
-| Float64 | 1.25 ms | 146 µs | 943 µs |
-| BigFloat-256 | 887 ms | 366 ms | 1.16 s |
-| MultiFloat-x4 | 269 ms | 241 ms | 1.04 s |
-| Arb/Acb-256 | 978 ms | 54.3 ms | 246 ms |
-
-**Takeaways:**
-- **Float64** is the fast baseline — 100–1000× ahead of any arbitrary-precision
-  backend (tens-of-µs `ν`, sub-ms amplitudes/radial).
-- **`Acb` is by far the fastest `ν` solver**: its native in-place monodromy kernel
-  beats the generic **`Arb`** path by ~23× at ω=0.1 (106 → 4.6 ms) and ~20× at
-  ω=10 (111 → 5.5 ms), and `BigFloat` by ~7× and ~12×. The generic `Arb` `ν` is
-  the *slowest* backend — ball arithmetic heap-boxes every operation, which is
-  exactly the overhead the `Acb` kernel removes.
-- `:arb` and `:acb` are the **same code** for `Binc`/`Bref`/`Rin`/`Rup` (the
-  native-Acb advantage is specific to `compute_nu`), hence the single `Arb/Acb`
-  row. Among the high-precision backends, **`Arb/Acb` has the fastest radial `Rin`**
-  (12 ms vs `BigFloat` 89 ms at ω=0.1), while **`MultiFloat` is fastest for the
-  amplitudes** — but see the precision caveat.
-- **Caveats.** `MultiFloat` caps at `Float64x4` (~212 bits ≈ 63 digits), *below*
-  the genuine 256-bit (~77-digit) `BigFloat`/`Arb`/`Acb` columns, so part of its
-  amplitude-speed lead is a lower-precision artefact. Its radial `Rin`/`Rup` only
-  *run* after Γ/log-Γ + Integer shims (in `src/multifloat_compat.jl`), and the
-  `₂F₁` connection formula leaves them only ~`Float64`-accurate (≈16 digits) — use
-  `Arb`/`BigFloat` for high-precision radial values. Radial timings at ω=10 use
-  `nmax=80` (timing only; accuracy at high \|ω\| needs more radial terms).
-- Cost grows from ω=0.1 to ω=10 (more recurrence/hypergeometric terms); `Rup` is
-  the hardest-hit — `BigFloat`/`MultiFloat` balloon to ~1 s.
+Caveats: one machine, single thread; the paclet was run out of the box (careful
+hand-tuning of its precision can push it further); decimal-digit ↔ bit matching
+is nominal.
 
 ---
 

@@ -6,6 +6,7 @@
 #     predictor never under-shoots on its own calibration set.
 using Test
 using Teukolsky, MultiFloats
+using Arblib: Arb
 const _R4 = MultiFloat{Float64,4}
 
 @testset "suggest_mst_precision" begin
@@ -20,7 +21,7 @@ const _R4 = MultiFloat{Float64,4}
         # backend split at the trust boundary
         @test suggest_mst_precision(im*2.0).backend == :multifloat
         @test suggest_mst_precision(im*2.0).bits == 212
-        @test suggest_mst_precision(im*8.0).backend == :bigfloat
+        @test suggest_mst_precision(im*8.0).backend == :acb
         @test suggest_mst_precision(im*8.0).bits > 212
         # higher multipole => at least as many terms
         @test suggest_mst_precision(im*6.0; l=5).nmax ≥ suggest_mst_precision(im*6.0; l=2).nmax
@@ -49,8 +50,10 @@ const _R4 = MultiFloat{Float64,4}
         # reflects precision, not cancellation at a physical zero.
         for σ in (0.3, 1.0, 2.2, 4.6, 6.7)
             h = suggest_mst_precision(im*σ; l=lp)
+            # :acb rung → the native in-place chain (compute_mst_core dispatches
+            # to compute_mst_core_acb for Arb inputs); :multifloat rung → F64x4.
             g = h.backend === :multifloat ? gcore(_R4, σ, h.nmax) :
-                setprecision(BigFloat, h.bits) do; gcore(BigFloat, σ, h.nmax); end
+                setprecision(Arb, h.bits) do; gcore(Arb, σ, h.nmax); end
             # Moderate over-precision reference at the SAME nmax (+192 bits, or
             # 424 bit for the F64x4 cases).  Avoids the extreme-precision (≳1000
             # bit) fragility in the existing hypergeometric near-integer guard,

@@ -91,8 +91,9 @@ end
     function Aminus_direct(p, ν, fn; nmax)
         s, ϵ = p.s, p.ϵ
         T = typeof(ϵ)
-        prefactor = T(2)^(-1 - s + im * ϵ) * exp(-π * im * (ν + 1 + s) / 2) *
-                    exp(-π * ϵ / 2)
+        πT = real(T)(π)   # full-precision π (π*im rounds through ComplexF64)
+        prefactor = T(2)^(-1 - s + im * ϵ) * exp(-πT * im * (ν + 1 + s) / 2) *
+                    exp(-πT * ϵ / 2)
         Σ = sum(iszero(fn[n]) ? zero(T) :
                 (-1)^n * pochhammer(ν + 1 + s - im * ϵ, n) /
                 pochhammer(ν + 1 - s + im * ϵ, n) * fn[n]

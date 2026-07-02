@@ -6,7 +6,12 @@ function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
-    prefactor = exp(-π*ϵ/2) * exp(π*im*(ν+1-s)/2) *
+    # π at FULL working precision.  The old `exp(π*im*(ν+1-s)/2)` evaluated
+    # `π*im` FIRST, promoting π through Complex{Bool} to Float64 — a silent
+    # 1.2e-16 relative error in the prefactor phase at EVERY precision
+    # (BigFloat/Arb included).  Found by the native-Acb prefactor arbiter.
+    πT = real(T)(π)
+    prefactor = exp(-πT*ϵ/2) * exp(im*πT*(ν+1-s)/2) *
                 T(2)^(-1+s-im*ϵ) *
                 _cgamma(ν + 1 - s + im*ϵ) / _cgamma(ν + 1 + s - im*ϵ)
 
@@ -19,9 +24,12 @@ function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
+    # Full-precision π — see compute_Aplus (the old `-π*im*…` truncated π to
+    # Float64 via Complex{Bool} promotion, a 1.2e-16 phase error at all precisions).
+    πT = real(T)(π)
     prefactor = T(2)^(-1-s+im*ϵ) *
-                exp(-π*im*(ν+1+s)/2) *
-                exp(-π*ϵ/2)
+                exp(-im*πT*(ν+1+s)/2) *
+                exp(-πT*ϵ/2)
 
     # Weights w(n) = (-1)^n (aw)_n/(bw)_n built by the incremental ratios
     #   w(n) = -w(n-1)·(aw+n-1)/(bw+n-1)   (ascending),
@@ -203,10 +211,11 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
     phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
     phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
 
-    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
-    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase
+    πT = real(typeof(ϵ))(π)   # full-precision π (π*im would round through ComplexF64)
+    sinν_factor = sin(πT * (ν - s + im*ϵ)) / sin(πT * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*πT*ν) * sinν_factor * Kνn) * Ap * phase
 
-    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*πT*ν) * Kνn) * Am * phase_conj
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
@@ -270,9 +279,10 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
     phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
     phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
 
-    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
-    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase
-    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj
+    πT = real(typeof(ϵ))(π)   # full-precision π (π*im would round through ComplexF64)
+    sinν_factor = sin(πT * (ν - s + im*ϵ)) / sin(πT * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*πT*ν) * sinν_factor * Kνn) * Ap * phase
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*πT*ν) * Kνn) * Am * phase_conj
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
@@ -392,9 +402,10 @@ function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
     phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
     phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
 
-    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
-    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase_mero
-    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj_mero
+    πT = real(typeof(ϵ))(π)   # full-precision π (π*im would round through ComplexF64)
+    sinν_factor = sin(πT * (ν - s + im*ϵ)) / sin(πT * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*πT*ν) * sinν_factor * Kνn) * Ap * phase_mero
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*πT*ν) * Kνn) * Am * phase_conj_mero
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
@@ -453,9 +464,10 @@ function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
     phase_mero = exp(-im * (-(1 - κ) / 2 * ϵ))
     phase_conj_mero = exp(im * (-(1 - κ) / 2 * ϵ))
 
-    sinν_factor = sin(π * (ν - s + im*ϵ)) / sin(π * (ν + s - im*ϵ))
-    Binc = ω_c^(-1) * (Kν - im * exp(-im*π*ν) * sinν_factor * Kνn) * Ap * phase_mero
-    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*π*ν) * Kνn) * Am * phase_conj_mero
+    πT = real(typeof(ϵ))(π)   # full-precision π (π*im would round through ComplexF64)
+    sinν_factor = sin(πT * (ν - s + im*ϵ)) / sin(πT * (ν + s - im*ϵ))
+    Binc = ω_c^(-1) * (Kν - im * exp(-im*πT*ν) * sinν_factor * Kνn) * Ap * phase_mero
+    Bref = ω_c^(-1 - 2s) * (Kν + im * exp(im*πT*ν) * Kνn) * Am * phase_conj_mero
 
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *

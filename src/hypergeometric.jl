@@ -396,3 +396,439 @@ function dhu_down(hp::HUParams, n::Int, dhu_np2, dhu_np1, hu_np1)
     t3 = (b + 2n) * 2im * (1 + b + 2n) * (2 + b + 2n) * hu_np1
     return t1 / denom, t2 / denom, t3 / denom
 end
+
+# ============================================================
+#  Certified HU / dHU evaluation with stable outward marching
+#  (Complex{Arb} and Complex{BigFloat} backends)
+#
+#  MEASURED FACTS (arbiter: per-n Arblib.hypgeom_u! with rigorous,
+#  rel_accuracy_bits-verified balls; see test/test_hu_evaluation.jl):
+#
+#  * The 3-term n-recurrence marched OUTWARD from seeds at n ∈ {0,1} is
+#    uniformly stable for HU[n]: across σ ∈ [0.5, 16] (ω = iσ PIA and the
+#    θ ∈ {0°,30°,60°} complex angles at |ω| ∈ {5,10}), r ∈ {4, 10},
+#    physical and arbitrary ν, the max relative drift over |n| ≤ 60 from
+#    exact seeds is ≤ 23 bits (worst at real ω; ≤ 3 bits in the PIA
+#    regimes) at every working precision tested (256/512/1024 bits).
+#    U is the dominant-or-neutral solution of the recurrence in BOTH
+#    outward directions (up for n>0, down for n<0), so outward marching
+#    cannot lose it; INWARD marching is exponentially unstable (errors
+#    grow ~1e70 over 60 steps at small σ) and is never used.
+#
+#  * The old per-step guard max(|t1/val|,|t2/val|) > 2.0 sits exactly on
+#    the natural mid-band plateau of the term ratios (K ≈ 0.9–5.7,
+#    hovering at 2.0 for |ω| ≳ 5): in BigFloat it fires almost every
+#    step — each dhu fallback costing TWO rigorous U calls — while for
+#    Complex{Arb} the BALL comparison becomes undecidable once radii
+#    grow and silently never fires.  The ratio plateau is NOT an
+#    instability (see above); the guard was miscalibrated.
+#
+#  * acb_hypgeom_u at the working precision loses ~0.6·(|c|+Re₊c) up to
+#    ~2.2·|c| bits INTERNALLY in its convergent-Kummer zone (the rigorous
+#    ball reports it: e.g. 25 good bits out of 256 at σ=16, r=4, PIA), so
+#    `hu_exact` at working precision — the old guard's fallback AND its
+#    seeds — was the real accuracy bottleneck, not the recurrence.
+#
+#  SCHEME
+#    Seeds HU[0], HU[1] (and the dHU companions) are evaluated by
+#    precision ESCALATION on Arblib.hypgeom_u!: call at
+#    need + 64 + 0.7(|c|+Re₊c) bits, verify the rigorous ball via
+#    rel_accuracy_bits ≥ need ≈ 0.94·prec, escalate by the measured
+#    deficit until certified.  Every other n comes from the outward
+#    march at working precision.  A cheap ComplexF64 shadow of the
+#    contaminant solution tracks the true dominant/wanted growth S(n),
+#    and a certified refresh replaces a marched value if either the
+#    running error estimate crosses the trip threshold or a single step
+#    cancels catastrophically (near-vanishing recurrence denominators at
+#    2ν ∈ ℤ / a+n−1 ≈ 0).  This keeps the exact-fallback safety net of
+#    the old scheme, now with a decidable (Float64) trigger and a
+#    certified (escalated) fallback value.
+#
+#  Float64 / MultiFloat paths keep the legacy guard scheme verbatim
+#  (_hu_dhu_evaluators_legacy below) — at 53–212 bits the mid-band drift
+#  budget is real and per-step exact fallback remains the right call.
+# ============================================================
+
+_hu_certified_backend(::Type) = false
+_hu_certified_backend(::Type{Complex{Arb}}) = true
+_hu_certified_backend(::Type{Complex{BigFloat}}) = true
+
+_hu_bits(hp::HUParams) = precision(real(hp.aU))
+
+_mid_f64(x::Arb) = Float64(Arblib.midref(x))
+_mid_f64(x) = Float64(x)
+_mid_c64(z::Complex) = complex(_mid_f64(real(z)), _mid_f64(imag(z)))
+_mag_f64(z::Complex) = abs(_mid_c64(z))
+
+# Exact midpoint lift to an Acb at precision p (the working-precision midpoints
+# DEFINE the evaluation problem; p ≥ source bits ⇒ conversion is exact).
+function _acb_at(z::Complex{Arb}, p::Int)
+    re = Arb(0; prec=p); im_ = Arb(0; prec=p)
+    Arblib.set!(re, Arblib.midref(real(z)))
+    Arblib.set!(im_, Arblib.midref(imag(z)))
+    return Acb(re, im_)
+end
+_acb_at(z::Complex{BigFloat}, p::Int) = Acb(Arb(real(z); prec=p), Arb(imag(z); prec=p))
+
+# Round an escalated-precision Acb back to the working scalar type.
+function _from_acb(::Type{Complex{Arb}}, H::Acb, pb::Int)
+    W = Acb(0; prec=pb)
+    Arblib.set_round!(W, H, pb)
+    return Complex{Arb}(W)
+end
+function _from_acb(::Type{Complex{BigFloat}}, H::Acb, pb::Int)
+    return Complex{BigFloat}(BigFloat(Arb(real(H))), BigFloat(Arb(imag(H))))
+end
+
+# Pre-estimate (bits) of acb_hypgeom_u's internal Kummer-zone cancellation.
+# Measured: ~1.0|c| for PIA (c real > 0, moderate a), up to ~2.2|c| when
+# Re(a) ≫ |c|/4; ~0.2–0.8|c| for imaginary c (real ω).  0.7(|c|+Re₊c)+64
+# lands the first call at-or-above the certified target in the common cases;
+# the escalation loop absorbs the rest by the measured deficit.
+_u_loss_estimate(c64::ComplexF64) = 64 + ceil(Int, 0.7 * (abs(c64) + max(real(c64), 0.0)))
+
+"""
+    _hu_seed_acb(hp, n, need) -> (H::Acb, acc::Int)
+
+Certified HU[n] = c^n U(n+aU, 2n+bU, c): escalate Arblib.hypgeom_u! precision
+until the rigorous result ball has `rel_accuracy_bits ≥ need`.  Returns the
+raw escalated-precision ball (caller rounds to working precision) and the
+certified accuracy in bits.
+"""
+function _hu_seed_acb(hp::HUParams, n::Int, need::Int)
+    p = need + _u_loss_estimate(_mid_c64(hp.c))
+    best = nothing
+    bacc = typemin(Int)
+    for _ in 1:5
+        aA = _acb_at(hp.aU, p); bA = _acb_at(hp.bU, p); cA = _acb_at(hp.c, p)
+        U = Acb(0; prec=p)
+        Arblib.hypgeom_u!(U, aA + n, bA + 2n, cA; prec=p)
+        H = Acb(0; prec=p)
+        Arblib.pow!(H, cA, n; prec=p)
+        Arblib.mul!(H, H, U; prec=p)
+        acc = min(Int(Arblib.rel_accuracy_bits(H)), p - 4)
+        acc >= need && return H, acc
+        if acc > bacc
+            best = H; bacc = acc
+        end
+        p = min(p + (need - acc) + 128, 4p + 1024)
+    end
+    @warn "_hu_seed_acb: escalation exhausted at n=$n (achieved $bacc of $need bits)" maxlog=2
+    return best, max(bacc, 1)
+end
+
+"""
+    _dhu_seed_acb(hp, n, need, Hraw) -> (D::Acb, acc::Int)
+
+Certified dHU[n] = -2i[(n/c)·HU[n] − c^n (aU+n) U(1+aU+n, 1+bU+2n, c)].
+`Hraw` (the raw certified ball from `_hu_seed_acb`, or `nothing`) is reused on
+the first attempt so the common path costs ONE extra hypgeom_u call; the ball
+arithmetic propagates its rigorous radius, so any cancellation between the two
+terms is captured honestly by `rel_accuracy_bits` and triggers escalation
+(which then recomputes both U's).
+"""
+function _dhu_seed_acb(hp::HUParams, n::Int, need::Int, Hraw::Union{Nothing,Acb})
+    p = need + _u_loss_estimate(_mid_c64(hp.c))
+    Hraw !== nothing && (p = max(p, precision(Hraw)))
+    best = nothing
+    bacc = typemin(Int)
+    for it in 1:5
+        aA = _acb_at(hp.aU, p); bA = _acb_at(hp.bU, p); cA = _acb_at(hp.c, p)
+        U2 = Acb(0; prec=p)
+        Arblib.hypgeom_u!(U2, aA + (n + 1), bA + (2n + 1), cA; prec=p)
+        cn = Acb(0; prec=p)
+        Arblib.pow!(cn, cA, n; prec=p)
+        term2 = cn * (aA + n) * U2
+        Hn = if it == 1 && Hraw !== nothing
+            Hraw
+        else
+            UH = Acb(0; prec=p)
+            Arblib.hypgeom_u!(UH, aA + n, bA + 2n, cA; prec=p)
+            H = Acb(0; prec=p)
+            Arblib.pow!(H, cA, n; prec=p)
+            Arblib.mul!(H, H, UH; prec=p)
+            H
+        end
+        D = Acb(0, -2; prec=p) * ((n / cA) * Hn - term2)
+        acc = min(Int(Arblib.rel_accuracy_bits(D)), p - 4)
+        acc >= need && return D, acc
+        if acc > bacc
+            best = D; bacc = acc
+        end
+        p = min(p + (need - acc) + 128, 4p + 1024)
+    end
+    @warn "_dhu_seed_acb: escalation exhausted at n=$n (achieved $bacc of $need bits)" maxlog=2
+    return best, max(bacc, 1)
+end
+
+# Per-direction march state: PURE-ComplexF64 twin marches of (i) the
+# contaminant solution g (seeded (0,1) — the second solution of the
+# recurrence) and (ii) the wanted solution h itself (seeded from the
+# certified-seed midpoints — valid as a MAGNITUDE tracker precisely because
+# the outward march is stable).  All per-step safety bookkeeping is Float64;
+# no Arb→Float64 conversions in the hot loop.
+#   (ga, gb)·2^logg : contaminant pair at positions (n∓2, n∓1)
+#   (ha, hb)·2^logh : wanted-solution twin pair
+#   mind            : min over past positions of (log2|g| − log2|h|)
+#   errb            : certified error bits (log2 rel err) of the current pair
+#   logg / logh accumulate only the RESCALE corrections, so both twins live in
+#   units normalized at the seed (d(seed) ≈ 0 and S measures pure relative
+#   growth); logh0 records the absolute scale |h(seed)| needed to convert true
+#   HU values into twin units for the dhu mixing term.
+mutable struct _HUMarchState
+    ga::ComplexF64
+    gb::ComplexF64
+    logg::Float64
+    ha::ComplexF64
+    hb::ComplexF64
+    logh::Float64
+    logh0::Float64
+    mind::Float64
+    errb::Float64
+    steps::Int
+end
+function _HUMarchState(errb::Float64, va::Complex, vb::Complex)
+    ha = _mid_c64(va); hb = _mid_c64(vb)
+    s = abs(hb)
+    if isfinite(s) && s > 0
+        return _HUMarchState(complex(0.0), complex(1.0), 0.0, ha/s, hb/s, 0.0, log2(s),
+                             0.0, errb, 0)
+    end
+    return _HUMarchState(complex(0.0), complex(1.0), 0.0, complex(1.0), complex(1.0), 0.0, 0.0,
+                         0.0, errb, 0)
+end
+
+@inline function _rescale2(a::ComplexF64, b::ComplexF64, m::Float64)
+    if isfinite(m) && (m > 1e100 || (m > 0 && m < 1e-100))
+        return a / m, b / m, log2(m)
+    end
+    return a, b, 0.0
+end
+
+# advance both twins one step; returns (est_bits, q3_est) — the running
+# relative-error estimate in bits (Inf when the twin broke / the step
+# cancelled catastrophically) and |t3|/|val| for the dhu mixing term
+# (0.0 for the plain hu march).
+function _shadow_advance!(st::_HUMarchState, hp64::HUParams{ComplexF64},
+                          n::Int, upward::Bool, pb::Int; dhu::Bool=false,
+                          hu64::ComplexF64=complex(0.0))
+    st.steps += 1
+    local gv, hv, qnum, q3::Float64
+    if dhu
+        # contaminant g obeys the HOMOGENEOUS part (zero HU mixing); the
+        # wanted-solution twin h gets the true HU value, rescaled into the
+        # twin's 2^-(logh0+logh) working scale.
+        hmix = hu64 * exp2(-(st.logh0 + st.logh))
+        g1, g2, _  = upward ? dhu_up(hp64, n, st.ga, st.gb, complex(0.0)) :
+                              dhu_down(hp64, n, st.ga, st.gb, complex(0.0))
+        h1, h2, h3 = upward ? dhu_up(hp64, n, st.ha, st.hb, hmix) :
+                              dhu_down(hp64, n, st.ha, st.hb, hmix)
+        gv = g1 + g2; hv = h1 + h2 + h3
+        qnum = abs(h1) + abs(h2) + abs(h3)
+        q3 = abs(h3)
+    else
+        g1, g2 = upward ? hu_up(hp64, n, st.ga, st.gb) : hu_down(hp64, n, st.ga, st.gb)
+        h1, h2 = upward ? hu_up(hp64, n, st.ha, st.hb) : hu_down(hp64, n, st.ha, st.hb)
+        gv = g1 + g2; hv = h1 + h2
+        qnum = abs(h1) + abs(h2)
+        q3 = 0.0
+    end
+    ah = abs(hv); ag = abs(gv)
+    (isfinite(ah) && ah > 0 && isfinite(ag)) || return Inf, q3
+    q = qnum / ah
+    (isfinite(q) && q < 2.0^24) || return Inf, q3
+    d = (st.logg + (ag > 0 ? log2(ag) : -Inf)) - (st.logh + log2(ah))
+    st.mind = min(st.mind, d)
+    S = d - st.mind
+    st.ga, gv, dg = _rescale2(st.gb, gv, ag)
+    st.gb = gv; st.logg += dg
+    st.ha, hv2, dh = _rescale2(st.hb, hv, ah)
+    st.hb = hv2; st.logh += dh
+    q3 = ah > 0 ? q3 / ah : 0.0
+    return max(st.errb, -pb + log2(1.0 + st.steps) + 2) + S + 1, q3
+end
+
+# in-place radius strip (no allocation; the input is a freshly built value)
+@inline function _strip_radius!(z::Complex{Arb})
+    Arblib.zero!(Arblib.radref(real(z)))
+    Arblib.zero!(Arblib.radref(imag(z)))
+    return z
+end
+@inline _strip_radius!(z::Complex) = z
+
+"""
+    _hu_dhu_evaluators(hp::HUParams{T}) -> (get_hu, get_dhu)
+
+Memoized evaluators for HU[n] and dHU[n] used by `Rup`/`dRup`.  For the
+Complex{Arb} and Complex{BigFloat} backends this is the certified-seed +
+outward-march scheme documented above; for all other scalar types it is the
+legacy exact-seeded recurrence with the per-step ratio guard (verbatim the
+pre-rewrite behavior).
+"""
+function _hu_dhu_evaluators(hp::HUParams{T}) where {T<:Complex}
+    _hu_certified_backend(T) || return _hu_dhu_evaluators_legacy(hp)
+
+    pb   = _hu_bits(hp)
+    need = min(pb, ceil(Int, 0.94 * pb) + 40)
+    trip = -0.86 * pb                       # refresh when est. rel-err bits exceed this
+    hp64 = HUParams(_mid_c64(hp.aU), _mid_c64(hp.bU), _mid_c64(hp.c))
+
+    hu_cache  = Dict{Int,T}()
+    dhu_cache = Dict{Int,T}()
+    raw_seeds = Dict{Int,Acb}()
+
+    up  = Ref{Union{Nothing,_HUMarchState}}(nothing)
+    dn  = Ref{Union{Nothing,_HUMarchState}}(nothing)
+    dup = Ref{Union{Nothing,_HUMarchState}}(nothing)
+    ddn = Ref{Union{Nothing,_HUMarchState}}(nothing)
+
+    function seed_hu!(n::Int)
+        H, acc = _hu_seed_acb(hp, n, need)
+        raw_seeds[n] = H
+        v = _from_acb(T, H, pb)
+        hu_cache[n] = v
+        return v, Float64(-(min(acc, pb) - 1))
+    end
+    function seed_dhu!(n::Int)
+        haskey(hu_cache, n) || get_hu(n)     # populate raw_seeds[n] for n ∈ {0,1}
+        D, acc = _dhu_seed_acb(hp, n, need, get(raw_seeds, n, nothing))
+        v = _from_acb(T, D, pb)
+        dhu_cache[n] = v
+        return v, Float64(-(min(acc, pb) - 1))
+    end
+    seederr() = Float64(-(need > pb ? pb : need) + 1)
+
+    function get_hu(n::Int)
+        v = get(hu_cache, n, nothing)
+        v === nothing || return v
+        if n == 0 || n == 1
+            v, _ = seed_hu!(n)
+            return v
+        end
+        upward = n >= 2
+        va = upward ? get_hu(n - 2) : get_hu(n + 2)
+        vb = upward ? get_hu(n - 1) : get_hu(n + 1)
+        stref = upward ? up : dn
+        if stref[] === nothing
+            stref[] = _HUMarchState(seederr(), va, vb)
+        end
+        st = stref[]
+        t1, t2 = upward ? hu_up(hp, n, va, vb) : hu_down(hp, n, va, vb)
+        # point arithmetic: marched Complex{Arb} balls accumulate triangle-
+        # inequality radii ~K^n that make Arb TRUNCATE the midpoints (~1 bit per
+        # step at complex ω); the midpoint march itself is stable (measured
+        # ≤ 23-bit drift), so strip radii like the Arb Lentz CF does and let the
+        # shadow tracker + certified refresh carry the error accounting.
+        val = _strip_radius!(t1 + t2)
+        est, _ = _shadow_advance!(st, hp64, n, upward, pb)
+        (isfinite(real(val)) && isfinite(imag(val))) || (est = Inf)
+        if est > trip
+            # safety net: certify BOTH pair values and restart the shadow
+            m = upward ? n - 1 : n + 1
+            _, em = seed_hu!(m)
+            v2, e2 = seed_hu!(n)
+            stref[] = _HUMarchState(max(em, e2), hu_cache[m], v2)
+            return v2
+        end
+        hu_cache[n] = val
+        return val
+    end
+
+    function get_dhu(n::Int)
+        v = get(dhu_cache, n, nothing)
+        v === nothing || return v
+        if n == 0 || n == 1
+            v, _ = seed_dhu!(n)
+            return v
+        end
+        get_hu(n)                            # keep the hu march (and shadow) ahead
+        upward = n >= 2
+        dva = upward ? get_dhu(n - 2) : get_dhu(n + 2)
+        dvb = upward ? get_dhu(n - 1) : get_dhu(n + 1)
+        hub = upward ? get_hu(n - 1) : get_hu(n + 1)
+        stref = upward ? dup : ddn
+        if stref[] === nothing
+            stref[] = _HUMarchState(seederr(), dva, dvb)
+        end
+        st = stref[]
+        t1, t2, t3 = upward ? dhu_up(hp, n, dva, dvb, hub) :
+                              dhu_down(hp, n, dva, dvb, hub)
+        val = _strip_radius!(t1 + t2 + t3)   # point arithmetic (see get_hu)
+        est, q3 = _shadow_advance!(st, hp64, n, upward, pb;
+                                   dhu=true, hu64=_mid_c64(hub))
+        (isfinite(real(val)) && isfinite(imag(val))) || (est = Inf)
+        # fold the HU-mixing error path: hu values are certified-march accurate
+        # (≥ 0.9·pb bits), entering through t3 with weight |t3|/|val|
+        if isfinite(est) && q3 > 0
+            est = max(est, -0.9 * pb + log2(q3) + 1)
+        end
+        if est > trip
+            m = upward ? n - 1 : n + 1
+            _, em = seed_dhu!(m)
+            v2, e2 = seed_dhu!(n)
+            stref[] = _HUMarchState(max(em, e2), dhu_cache[m], v2)
+            return v2
+        end
+        dhu_cache[n] = val
+        return val
+    end
+
+    return get_hu, get_dhu
+end
+
+# Legacy evaluators (verbatim pre-rewrite behavior): exact seeds at working
+# precision, per-step ratio guard > 2.0 with hu_exact/dhu_exact fallback, and
+# the all-exact shortcut when the asymptotic series already meets the working
+# tolerance.  Kept for Float64/Float32/MultiFloat backends.
+function _hu_dhu_evaluators_legacy(hp::HUParams{T}) where {T<:Complex}
+    R = real(T)
+    hu_cache  = Dict{Int,T}()
+    dhu_cache = Dict{Int,T}()
+    _asymp_acc = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
+    _acc_tol = (R === Float64 || R === Float32) ? 1e-6 : eps(R)^(3//4)
+    use_exact_all = _asymp_acc < _acc_tol
+
+    function get_hu(n::Int)
+        haskey(hu_cache, n) && return hu_cache[n]
+        if use_exact_all || n == 0 || n == 1
+            val = hu_exact(hp, n)
+        elseif n >= 2
+            t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
+            val = t1 + t2
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
+                val = hu_exact(hp, n)
+            end
+        else
+            t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
+            val = t1 + t2
+            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
+                val = hu_exact(hp, n)
+            end
+        end
+        hu_cache[n] = val
+        return val
+    end
+
+    function get_dhu(n::Int)
+        haskey(dhu_cache, n) && return dhu_cache[n]
+        if use_exact_all || n == 0 || n == 1
+            val = dhu_exact(hp, n, get_hu(n))   # reuse base HU[n] (optimization B)
+        elseif n >= 2
+            t1, t2, t3 = dhu_up(hp, n, get_dhu(n-2), get_dhu(n-1), get_hu(n-1))
+            val = t1 + t2 + t3
+            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
+                val = dhu_exact(hp, n)
+            end
+        else
+            t1, t2, t3 = dhu_down(hp, n, get_dhu(n+2), get_dhu(n+1), get_hu(n+1))
+            val = t1 + t2 + t3
+            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
+                val = dhu_exact(hp, n)
+            end
+        end
+        dhu_cache[n] = val
+        return val
+    end
+
+    return get_hu, get_dhu
+end

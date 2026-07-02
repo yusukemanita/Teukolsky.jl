@@ -44,40 +44,20 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeo
     hp = HUParams(p, ν, zhat)
 
     # Prefactor (Teukolsky, MST.m line 90)
-    prefac = 2^ν * exp(-π*ϵ) * exp(-im*π*(ν + 1)) *
+    # πT: π at the working precision.  `-π*ϵ` / `-im*π*(ν+1)` materialize
+    # Float64(π) (unary minus / im product on the Irrational), silently
+    # polluting every Arb/BigFloat Rup value at ~ϵ·1.2e-16 relative — caught
+    # by the independent-π direct-sum arbiter in test_hu_evaluation.jl.
+    πT = π * one(real(ν))
+    prefac = 2^ν * exp(-πT*ϵ) * exp(-im*πT*(ν + 1)) *
              exp(im*zhat) * zhat^(ν + im*(ϵ + τ)/2) *
              (zhat - ϵ*κ)^(-im*(ϵ + τ)/2) *
-             exp(-im*π*s) * (zhat - ϵ*κ)^(-s)
+             exp(-im*πT*s) * (zhat - ϵ*κ)^(-s)
 
-    # HU cache with recurrence + fallback
-    hu_cache = Dict{Int, typeof(p.ϵ)}()
-    # Check if asymptotic expansion converges well for n=0.
-    # If so, bypass the (potentially unstable) recurrence for all n.
-    _asymp_acc = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
-    _Rr = real(typeof(p.ϵ))
-    _acc_tol = (_Rr === Float64 || _Rr === Float32) ? 1e-6 : eps(_Rr)^(3//4)
-    use_exact_all = _asymp_acc < _acc_tol
-
-    function get_hu(n::Int)
-        haskey(hu_cache, n) && return hu_cache[n]
-        if use_exact_all || n == 0 || n == 1
-            val = hu_exact(hp, n)
-        elseif n >= 2
-            t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        else
-            t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        end
-        hu_cache[n] = val
-        return val
-    end
+    # HU evaluator: certified seeds + stable outward march for the Arb/BigFloat
+    # backends, legacy exact-seeded recurrence + ratio guard otherwise.
+    # See the "Certified HU / dHU evaluation" section in hypergeometric.jl.
+    get_hu, _ = _hu_dhu_evaluators(hp)
 
     # fUp_n weight (-1)^n (aw)_n/(bw)_n carried incrementally per direction —
     # O(1) work per term instead of two O(|n|) pochhammer(·,n) calls (O(nmax²)
@@ -141,8 +121,9 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(type
 
     hp = HUParams(p, ν, zhat)
 
-    # Prefactor components
-    A = 2^ν * exp(-π*ϵ) * exp(-im*π*(ν + 1)) * exp(-im*π*s)
+    # Prefactor components (πT: working-precision π — see Rup above)
+    πT = π * one(real(ν))
+    A = 2^ν * exp(-πT*ϵ) * exp(-im*πT*(ν + 1)) * exp(-im*πT*s)
     exp_z = exp(im*zhat)
     pow_z = zhat^(ν + im*(ϵ + τ)/2)
     zmek = zhat - ϵ*κ
@@ -168,55 +149,10 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(type
     dprefac = dprefac_dzhat * dzhatdr
     prefac_dzdr = prefac * dzhatdr
 
-    # HU and dHU caches
-    hu_cache = Dict{Int, typeof(p.ϵ)}()
-    dhu_cache = Dict{Int, typeof(p.ϵ)}()
-    _asymp_acc2 = hypergeometric_U_asymptotic_accuracy(hp.aU, hp.bU, hp.c)
-    _Rr2 = real(typeof(p.ϵ))
-    _acc_tol2 = (_Rr2 === Float64 || _Rr2 === Float32) ? 1e-6 : eps(_Rr2)^(3//4)
-    use_exact_all2 = _asymp_acc2 < _acc_tol2
-
-    function get_hu(n::Int)
-        haskey(hu_cache, n) && return hu_cache[n]
-        if use_exact_all2 || n == 0 || n == 1
-            val = hu_exact(hp, n)
-        elseif n >= 2
-            t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        else
-            t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        end
-        hu_cache[n] = val
-        return val
-    end
-
-    function get_dhu(n::Int)
-        haskey(dhu_cache, n) && return dhu_cache[n]
-        if use_exact_all2 || n == 0 || n == 1
-            val = dhu_exact(hp, n, get_hu(n))   # reuse base HU[n] (optimization B)
-        elseif n >= 2
-            t1, t2, t3 = dhu_up(hp, n, get_dhu(n-2), get_dhu(n-1), get_hu(n-1))
-            val = t1 + t2 + t3
-            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
-                val = dhu_exact(hp, n)
-            end
-        else
-            t1, t2, t3 = dhu_down(hp, n, get_dhu(n+2), get_dhu(n+1), get_hu(n+1))
-            val = t1 + t2 + t3
-            if iszero(val) || max(abs(t1/val), abs(t2/val), abs(t3/val)) > 2.0
-                val = dhu_exact(hp, n)
-            end
-        end
-        dhu_cache[n] = val
-        return val
-    end
+    # HU/dHU evaluators: certified seeds + stable outward march for the
+    # Arb/BigFloat backends, legacy exact-seeded recurrence + ratio guard
+    # otherwise (see hypergeometric.jl, "Certified HU / dHU evaluation").
+    get_hu, get_dhu = _hu_dhu_evaluators(hp)
 
     # fUp_n weight carried incrementally per direction (see Rup above).
     T = typeof(p.ϵ)
