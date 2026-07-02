@@ -69,6 +69,8 @@ Low-level entry points are also exported:
 amp  = compute_amplitudes(-2, 2, 2, 0.0, 0.5) # NamedTuple: Binc, Bref, Btrans, Ctrans, ν, fn, ...
 fn   = compute_fn(p, ν)                        # MST coefficients f_n (Dict)
 Rin(p, ν, fn, 10.0)                            # bare ingoing solution
+Rup(p, ν, fn, 10.0)                            # upgoing solution (Rdown: third solution, enters q̃)
+dRin(p, ν, fn, 10.0); dRup(p, ν, fn, 10.0)     # r-derivatives
 ```
 
 ### Arbitrary precision
@@ -77,6 +79,33 @@ Rin(p, ν, fn, 10.0)                            # bare ingoing solution
 setprecision(BigFloat, 256) do
     tr = TeukolskyRadial(-2, 2, 2, big"0.9", big"0.5")
     tr.In(big"10.0")    # full BigFloat-accurate radial value
+end
+```
+
+### Branch-cut coefficients and the shared MST core
+
+For Green's-function / branch-cut work (ω on the positive imaginary axis), one
+core solve feeds everything — ν, `f_n`, and A^ν_± are computed ONCE and reused:
+
+```julia
+using Arblib: Arb
+
+setprecision(Arb, 320) do
+    ω    = Complex{Arb}(Arb(0), Arb(43)/10)            # ω = 4.3i on the branch cut
+    core = compute_mst_core(-2, 2, 2, Arb(7)/10, ω)    # Arb inputs → native :acb chain
+    qt   = qtilde_from_core(core)                      # branch-cut coefficient q̃(ω)
+    q    = q_from_core(core)                           # branch-cut coefficient q(ω)
+    ru   = Rup(core.p, core.ν, core.fn, Arb(10); ctrans=mst_ctrans(core))
+end
+```
+
+One-call versions solve the core internally and return `(q, ν, p, Ap, Am)` /
+`(qtilde, ν, p, Ap, Am)`:
+
+```julia
+setprecision(BigFloat, 320) do
+    compute_q(-2, 2, 2, big"0.7", im*big"4.3")        # q(ω):  branch-cut strength of R^up
+    compute_qtilde(-2, 2, 2, big"0.7", im*big"4.3")   # q̃(ω):  branch-cut strength of R^down
 end
 ```
 
@@ -159,6 +188,12 @@ Three rules of use:
 SpinWeightedSpheroidalEigenvalue(-2, 2, 2, 0.45)       # λ = A_lm, oblateness γ = aω
 SpinWeightedSpheroidalHarmonicS(-2, 2, 2, 0.9, 0.5, π/3)          # S_lm(θ) for a, ω
 SpinWeightedSpheroidalHarmonicS(-2, 2, 2, 0.9, 0.5, π/3; deriv=1) # dS/dθ
+
+# lower level: eigenvalue, bare spin-weighted spherical harmonic, and the
+# spherical–spheroidal mixing coefficients (S_lm = Σ_l′ C[l′]·ₛY_{l′m})
+compute_lambda(-2, 2, 2, 0.9, 0.5)
+sYlm(-2, 2, 2, π/3)
+ells, C = swsh_coefficients(-2, 2, 2, 0.9, 0.5)
 ```
 
 ### Kerr geodesics
@@ -192,6 +227,30 @@ TeukolskyPointParticleMode(-2, 2, 2, 0.9, 6.0)   # prograde horizon flux < 0 (su
 nu_pn(-2, 2, 2, 0.0; order=4)      # low-frequency (PN) expansion of ν as a series in ε = 2Mω
 lambda_pn(-2, 2, 2, 0.0; order=4)  # PN expansion of the eigenvalue λ
 ```
+
+### Frequency-domain Green's function & time-domain waveform
+
+```julia
+wp = WaveformParams(s=-2, l=2, m=2, a=0.0, N=100, ω_max=6.0, Nt=64)
+
+green_function(wp, 0.5)                  # retarded G(ω) at one frequency
+t, ψ, GF, ωs = compute_waveform(wp)      # ψ(t) by inverse FFT of G on the ω-grid
+```
+
+`compute_waveform` samples `G(ω)` on an `N`-point grid up to `ω_max` (mirrored by
+`G(−ω) = conj G(ω)`, so ψ is real to rounding) and returns the time grid, waveform,
+Green's-function samples, and frequency grid.  Type-generic: `BigFloat` parameters
+give a `Complex{BigFloat}` waveform.
+
+### Independent numerical cross-check
+
+```julia
+ni = NumericalIntegrationRadial(-2, 2, 2, 0.0, 0.5)   # adaptive Dormand–Prince solver
+ni.In(10.0)                                            # same conventions as TeukolskyRadial
+```
+
+An MST-free radial solver used to cross-validate `R_in`/`R_up` (accuracy capped at
+~10⁻²⁰ by the DP5 order — a cross-check, not a deep-precision production path).
 
 ---
 
