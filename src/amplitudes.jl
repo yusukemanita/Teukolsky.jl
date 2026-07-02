@@ -36,6 +36,13 @@ function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     return prefactor * Σ
 end
 
+# Rup / amplitude normalization constant (Sasaki-Tagoshi; MST.m UpTrans)
+#   Ctrans = ω^{-1-2s} A^ν_- exp(i(ε logε − (1−κ)/2 ε))
+# Single source of truth: Rup/dRup fallback, compute_amplitudes(_nufixed), and
+# mst_ctrans all call this so the convention can never drift between call sites.
+_ctrans(p::MSTParams, Am) =
+    p.ω^(-1 - 2*p.s) * Am * exp(im * (p.ϵ * log(p.ϵ) - (1 - p.κ) / 2 * p.ϵ))
+
 # ============================================================
 #  Matching coefficient K_ν, Eq. (165)
 # ============================================================
@@ -169,7 +176,7 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
     Btrans = (ϵ * κ / ω_c)^(2s) *
              exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
 
-    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
+    Ctrans = _ctrans(p, Am)
 
     return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)
@@ -234,7 +241,7 @@ function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
     Σfn = sum(fn[n] for n in -nmax:nmax)
     Btrans = (ϵ * κ / ω_c)^(2s) *
              exp(im * (ϵ + τ) * κ * (0.5 + log(κ) / (1 + κ))) * Σfn
-    Ctrans = ω_c^(-1 - 2s) * Am * phase_conj
+    Ctrans = _ctrans(p, Am)
 
     return (Binc=Binc/Btrans, Bref=Bref/Btrans, Btrans=Btrans, Ctrans=Ctrans,
             ν=ν, fn=fn, Ap=Ap, Am=Am, Kν=Kν, Kνn=Kνn)

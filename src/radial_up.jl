@@ -114,10 +114,7 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeo
     ct = if ctrans !== nothing
         ctrans
     else
-        Am = compute_Aminus(p, ν, fn; nmax=nmax)
-        ω_c = p.ω
-        phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
-        ω_c^(-1 - 2s) * Am * phase_conj
+        _ctrans(p, compute_Aminus(p, ν, fn; nmax=nmax))
     end
 
     return raw / ct
@@ -250,10 +247,7 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(type
     ct = if ctrans !== nothing
         ctrans
     else
-        Am = compute_Aminus(p, ν, fn; nmax=nmax)
-        ω_c = p.ω
-        phase_conj = exp(im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
-        ω_c^(-1 - 2s) * Am * phase_conj
+        _ctrans(p, compute_Aminus(p, ν, fn; nmax=nmax))
     end
 
     return raw / ct

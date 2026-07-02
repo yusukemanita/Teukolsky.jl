@@ -93,65 +93,61 @@ end
 #  Compute minimal solution {f^ν_n}, Eqs. (123), (134)
 # ============================================================
 
-"""
-    compute_fn(p, ν; nmax=80)
+# Fill f_n for n = ±1, ±2, … out to |n| = nmax along ONE direction (`step` = +1
+# forward via Rn_cf, −1 backward via Ln_cf), using f_n = (f_n/f_{n∓1})·f_{n∓1}.
+# When `truncate`, stop once `n_consec` consecutive |f_n| fall below `τol·max|f|`
+# (after ≥ `min_terms` terms) and zero-fill the rest so downstream fn[n] indexing
+# still spans the full -nmax:nmax range.  Both directions share this routine so the
+# forward/backward stopping rule can never drift out of sync.
+function _extend_fn!(f::Dict{Int,T}, p::MSTParams, ν, step::Int, cf,
+                     nmax::Int, nmax_cf::Int, τol, min_terms::Int,
+                     n_consec::Int, truncate::Bool) where {T}
+    RT = real(T)
+    fmax = one(RT); nsmall = 0; nstop = step * nmax
+    n = step
+    while abs(n) <= nmax
+        ratio = cf(p, ν, n; nmax=nmax_cf)
+        f[n] = ratio * f[n - step]
+        af = abs(f[n]); fmax = max(fmax, af)
+        nsmall = af < τol * fmax ? nsmall + 1 : 0
+        if truncate && abs(n) >= min_terms && nsmall >= n_consec
+            nstop = n; break
+        end
+        n += step
+    end
+    for k in (nstop + step):step:(step * nmax)
+        f[k] = zero(T)
+    end
+    return nothing
+end
 
-Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax.
-Normalized so that f_0 = 1.
+"""
+    compute_fn(p, ν; nmax=80, tol=-1)
+
+Compute the minimal solution f^ν_n for -nmax ≤ n ≤ nmax, normalized so f_0 = 1.
+
+By default (`tol ≤ 0`) the FULL 2·nmax continued-fraction sum is evaluated.  Passing
+a positive `tol` enables adaptive early termination: the outward continued-fraction
+evaluation stops once `n_consec` consecutive terms fall below `tol·(running max |f|)`
+(after at least `min_terms` terms), zero-filling the remainder.
+
+WARNING: early termination inspects only `|f_n|`.  Downstream consumers weight f_n by
+Pochhammer/Γ factors — `compute_Aminus`, and especially `compute_Knu`, whose numerator
+weights grow with n in the complex-ν regime — so a term negligible in `|f_n|` is NOT
+automatically negligible in the weighted summand.  Truncation can shift Kν, and hence
+Binc/Bref, by percent-level amounts (verified for ν = 1/2 + it).  Enable it (positive
+`tol`) only after verifying it is safe for the specific quantity you are computing.
 """
 function compute_fn(p::MSTParams, ν; nmax::Int=80, nmax_cf::Int=2000,
                    tol::Real=-1, min_terms::Int=8, n_consec::Int=3)
     T  = typeof(p.ϵ)
     RT = real(T)
-    # Adaptive early termination (optimization C): the minimal solution f^ν_n
-    # decays away from n=0, so once the tail is negligible we stop instead of
-    # always evaluating a fixed 2·nmax continued fractions.  nmax stays a HARD
-    # upper cap (can only shorten, never extend).  tol defaults to eps(real T) —
-    # the machine-precision floor — NOT eps^{3/4}: downstream amplitude sums
-    # (compute_Aminus, compute_Knu) weight f_n by Pochhammer/Γ factors that GROW
-    # like n^{2ν+2s}, so a term negligible in |f_n| is not automatically negligible
-    # in the weighted summand.  Truncating only at the precision floor keeps the
-    # dropped weighted tail below round-off for all l/s while still cutting ~1.6×
-    # of the continued-fraction work.  f_n is not perfectly monotone, so we break
-    # only after n_consec CONSECUTIVE terms fall below tol·(running max |f|) and at
-    # least min_terms terms have been taken.
-    τol = tol < 0 ? eps(RT) : RT(tol)
+    truncate = tol > 0
+    τol = truncate ? RT(tol) : zero(RT)
     f = Dict{Int, T}()
     f[0] = one(T)
-
-    # Forward: stop the (expensive) continued-fraction evals once the tail is
-    # negligible, then fill the rest of the range with exact zeros so downstream
-    # consumers that index fn[n] directly (e.g. Σfn in compute_amplitudes) still
-    # see the full -nmax:nmax range.  The zeroed terms are < τol·|f|max, so this
-    # is below the precision floor.
-    nstop = nmax; fmax = one(RT); nsmall = 0
-    for n in 1:nmax
-        R = Rn_cf(p, ν, n; nmax=nmax_cf)
-        f[n] = R * f[n-1]
-        af = abs(f[n]); fmax = max(fmax, af)
-        nsmall = af < τol * fmax ? nsmall + 1 : 0
-        if n >= min_terms && nsmall >= n_consec
-            nstop = n; break
-        end
-    end
-    for n in nstop+1:nmax
-        f[n] = zero(T)
-    end
-
-    nstop = -nmax; fmax = one(RT); nsmall = 0   # independent decay on the n<0 side
-    for n in -1:-1:-nmax
-        L = Ln_cf(p, ν, n; nmax=nmax_cf)
-        f[n] = L * f[n+1]
-        af = abs(f[n]); fmax = max(fmax, af)
-        nsmall = af < τol * fmax ? nsmall + 1 : 0
-        if -n >= min_terms && nsmall >= n_consec
-            nstop = n; break
-        end
-    end
-    for n in nstop-1:-1:-nmax
-        f[n] = zero(T)
-    end
-
+    _extend_fn!(f, p, ν, +1, Rn_cf, nmax, nmax_cf, τol, min_terms, n_consec, truncate)
+    _extend_fn!(f, p, ν, -1, Ln_cf, nmax, nmax_cf, τol, min_terms, n_consec, truncate)
     return f
 end
 
