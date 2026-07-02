@@ -287,6 +287,23 @@ builds the public Dict once via [`_fn_dict_from_vec`](@ref).
 """
 function _compute_fn_acb_vec(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
     prec = precision(Arb)
+    # NEAR-INTEGER-ν GATE: with ν within ~1e-3 of a real integer AND small |ε|
+    # (deep-IR branch cut, where ν(l) → l), the backward peel crosses CF poles
+    # (|L_n| swings ~8 orders within a few n) and the kernel's FOLDED coefficient
+    # algebra ((x−s)²+ε² …) loses ~7 digits crossing them — the products then
+    # amplify to O(1) in f_{-n} (caught by the Gpia T0b Wolfram cross-check at
+    # σ = 5e-4, l′ = 5).  The generic Complex{Arb} ratio peel evaluates the
+    # unfolded coefficients and stays exact there, so route this rare corner
+    # through it (same gating pattern as the monodromy resonance gate).
+    νm = Complex{BigFloat}(ν)
+    if abs(imag(νm)) < 1e-3 && abs(real(νm) - round(real(νm))) < 1e-3
+        f = compute_fn(p, ν; nmax=nmax, nmax_cf=nmax_cf, tol=tol)
+        fv = Vector{Acb}(undef, 2*nmax + 1)
+        for n in -nmax:nmax
+            fv[n + nmax + 1] = Acb(f[n]; prec=prec)
+        end
+        return fv
+    end
     ctx  = _build_fn_ctx_acb(p, ν; prec=prec)
     tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
     off = nmax + 1                       # fv[n + off] = f_n

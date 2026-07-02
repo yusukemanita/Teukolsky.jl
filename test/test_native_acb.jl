@@ -153,6 +153,29 @@ end
     end
 end
 
+@testset "deep-IR near-integer-ν gate (Gpia T0b corner)" begin
+    # At σ = 5e-4 (deep IR), ν(l′) → l′ within ~2e-7 and the backward peel
+    # crosses CF poles; the native folded-coefficient peel lost ~7 digits there
+    # (f₋₂/f₋₃ O(1) wrong for l′=5 — caught by the Gpia Wolfram cross-check).
+    # The near-integer-ν gate now routes this corner through the generic ratio
+    # peel; the full Arb chain must match BigFloat.
+    for lp in (4, 5)
+        vb = setprecision(BigFloat, 256) do
+            a = BigFloat(7)/10; ω = Complex{BigFloat}(0, BigFloat(1)/2000)
+            core = compute_mst_core(-2, lp, 2, a, ω; nmax=40)
+            Complex{BigFloat}(qtilde_from_core(core) *
+                Rup(core.p, core.ν, core.fn, BigFloat(10); nmax=40, ctrans=mst_ctrans(core)))
+        end
+        va = setprecision(Arb, 256) do
+            a = Arb(7)/10; ω = Complex{Arb}(Arb(0), Arb(1)/2000)
+            core = compute_mst_core(-2, lp, 2, a, ω; nmax=40)
+            Complex{BigFloat}(qtilde_from_core(core) *
+                Rup(core.p, core.ν, core.fn, Arb(10); nmax=40, ctrans=mst_ctrans(core)))
+        end
+        @test _relC(va, vb) < 1e-25
+    end
+end
+
 @testset "Arb Lentz stall-exit regression (σ ≳ 13.3 backward CF)" begin
     # Truth is computed IN-TEST by the algorithm-independent bottom-up (tail-to-
     # head) evaluation of the same continued fraction — self-arbitrating, so the

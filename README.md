@@ -125,11 +125,14 @@ beyond \|ω\| ≈ 1–2.  From there, use `:acb` at the bit-count suggested by
 `suggest_mst_precision(ω)` — a measured envelope that jumps straight to the
 precision the frequency needs.
 
-(`BigFloat` also works at any precision — every kernel is type-generic — but MPFR
-heap-allocates every operation, while the `:acb` chain runs zero-allocation
-in-place kernels (ν monodromy, CF-peeled `f_n`, A±) plus FLINT's rigorous
-`acb_hypgeom_u`: identical values, measured 2.8–7.6× faster end-to-end.
-`:acb` wins; use it.)
+(Two more backends exist but are not recommended.  `:bigfloat` works at any
+precision — every kernel is type-generic — but MPFR heap-allocates every
+operation, while the `:acb` chain runs zero-allocation in-place kernels
+(ν monodromy, CF-peeled `f_n`, A±) plus FLINT's rigorous `acb_hypgeom_u`:
+identical values, measured 2.8–7.6× faster end-to-end.  `:multifloat`
+(Float64×4) has fast arithmetic but **no native special functions** — its Γ, U,
+and monodromy all detour through BigFloat — and hard-caps at 212 bits, so we
+don't use it.  `:acb` wins; use it.)
 
 ```julia
 using Teukolsky
