@@ -230,3 +230,24 @@ include("test_fluxes.jl")
 # Arb backend validation for Binc/Bref/Rin/Rup at large complex frequency
 # (self-consistency vs the BigFloat path + radial Wronskian).
 include("test_arb_amplitudes.jl")
+
+# |ω|-driven precision predictor: structure + calibration guard (predicted
+# precision reproduces the branch-cut MST core).
+include("test_precision_hint.jl")
+
+# Native in-place Acb kernels (M3): f^ν_n, A^ν_± equivalence vs the generic
+# path, the Arb-Lentz stall-exit regression (σ≳13.3 backward CF), and R^up vs
+# a 700-bit reference.
+include("test_native_acb.jl")
+
+# PIA monodromy resonance (4σ ∈ ℤ ⇒ exact Γ·Poch 0·∞ in the factored form):
+# compute_nu must return CF-residual-validated ν on the resonant grid.
+include("test_pia_resonance.jl")
+
+# Spheroidal λ branch tracking: continuity across the former σ≈4.19 jump,
+# PIA sweep smoothness, fine-step continuation arbiter, c→0 limit.
+include("test_lambda_tracking.jl")
+
+# Large-ω MST performance work: CF-ratio peeling ≡ per-n Lentz, the
+# hypergeometric_U BigFloat→Arb bridge, and incremental Pochhammer weights.
+include("test_mst_perf_opt.jl")

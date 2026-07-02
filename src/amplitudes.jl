@@ -23,12 +23,35 @@ function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
                 exp(-π*im*(ν+1+s)/2) *
                 exp(-π*ϵ/2)
 
+    # Weights w(n) = (-1)^n (aw)_n/(bw)_n built by the incremental ratios
+    #   w(n) = -w(n-1)·(aw+n-1)/(bw+n-1)   (ascending),
+    #   w(n) = -w(n+1)·(bw+n)/(aw+n)       (descending)
+    # — O(nmax) multiplies total instead of the O(nmax²) of fresh pochhammer(·,n)
+    # calls, with the same near-pole conditioning (the descending ratio divides by
+    # the same (aw+n) factors pochhammer would).  Summation order (nmin → nmax,
+    # small far-tail terms first) is preserved via the weight vector.
+    # `_strip_radius` keeps the chained Complex{Arb} products in point arithmetic
+    # (the nu_solver marching-Pochhammer convention): at large |ω| the ν ball has
+    # only ~56 accurate bits and compounding weight radii through the chain turns
+    # the cancellation-heavy sums into zero-containing balls (NaN on division)
+    # where the fresh-pochhammer form scraped by.  No-op for Float64/BigFloat.
+    aw = ν + 1 + s - im*ϵ
+    bw = ν + 1 - s + im*ϵ
+    off = 1 - nmin
+    w = Vector{T}(undef, nmax - nmin + 1)
+    n0 = clamp(0, nmin, nmax)   # anchor (n0 = 0 for every in-tree call site)
+    w[n0 + off] = T((-1)^n0 * pochhammer(aw, n0) / pochhammer(bw, n0))
+    for n in n0+1:nmax
+        w[n + off] = _strip_radius(-w[n - 1 + off] * (aw + (n - 1)) / (bw + (n - 1)))
+    end
+    for n in n0-1:-1:nmin
+        w[n + off] = _strip_radius(-w[n + 1 + off] * (bw + n) / (aw + n))
+    end
+
     Σ = sum(
         begin
             fn_n = fn[n]
-            iszero(fn_n) ? zero(T) :
-            (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
-                     pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
+            iszero(fn_n) ? zero(T) : w[n + off] * fn_n
         end
         for n in nmin:nmax
     )
@@ -78,16 +101,29 @@ function compute_Knu(p::MSTParams, ν, fn; nmax::Int=80, r::Int=0)
         num_sum += sgn * G * fn_n
     end
 
+    # Denominator weights v(n) = (-1)^n / Γ(r-n+1) / (e)_n · (c)_n/(d)_n built
+    # incrementally from the n = r anchor by the descending ratio
+    #   v(n) = -v(n+1)·(e+n)(d+n) / ((r-n)(c+n)),
+    # replacing three O(|n|) pochhammer(·,n) calls per term (O(nmax²) total) with
+    # O(1) work per n; the near-pole conditioning is unchanged (the ratio divides
+    # by the same (c+n) factors pochhammer would).  Summation order (-nmax → r,
+    # small far-tail terms first) is preserved via the weight vector.
+    cd = ν + 1 + s - im*ϵ
+    dd = ν + 1 - s + im*ϵ
+    ew = T(r) + 2ν + 2
+    voff = 1 + nmax
+    v = Vector{T}(undef, nmax + r + 1)
+    v[r + voff] = T((-1)^r / pochhammer(ew, r) *
+                    pochhammer(cd, r) / pochhammer(dd, r))
+    for n in (r-1):-1:-nmax
+        v[n + voff] = _strip_radius(-v[n + 1 + voff] * (ew + n) * (dd + n) /
+                                    (T(r - n) * (cd + n)))
+    end
     den_sum = zero(T)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / _cgamma(T(r - n + 1)) /
-               pochhammer(r + 2ν + 2, n) *
-               pochhammer(ν + 1 + s - im*ϵ, n) /
-               pochhammer(ν + 1 - s + im*ϵ, n) *
-               fn_n
-        den_sum += term
+        den_sum += v[n + voff] * fn_n
     end
 
     prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - ν - r) * T(2)^(-s) /
@@ -282,16 +318,23 @@ function compute_Knu_mero(p::MSTParams, ν, fn; nmax::Int=80, r::Int=0)
         num_sum += sgn * G * fn_n
     end
 
+    # Incremental denominator weights — see compute_Knu for the derivation.
+    cd = ν + 1 + s - im*ϵ
+    dd = ν + 1 - s + im*ϵ
+    ew = T(r) + 2ν + 2
+    voff = 1 + nmax
+    v = Vector{T}(undef, nmax + r + 1)
+    v[r + voff] = T((-1)^r / pochhammer(ew, r) *
+                    pochhammer(cd, r) / pochhammer(dd, r))
+    for n in (r-1):-1:-nmax
+        v[n + voff] = _strip_radius(-v[n + 1 + voff] * (ew + n) * (dd + n) /
+                                    (T(r - n) * (cd + n)))
+    end
     den_sum = zero(T)
     for n in -nmax:r
         fn_n = fn[n]
         iszero(fn_n) && continue
-        term = (-1)^n / _cgamma(T(r - n + 1)) /
-               pochhammer(r + 2ν + 2, n) *
-               pochhammer(ν + 1 + s - im*ϵ, n) /
-               pochhammer(ν + 1 - s + im*ϵ, n) *
-               fn_n
-        den_sum += term
+        den_sum += v[n + voff] * fn_n
     end
 
     prefactor = exp(im*ϵ*κ) * (2*ϵ*κ)^(s - r) * T(2)^(-s) /

@@ -93,21 +93,84 @@ end
 #  Compute minimal solution {f^ν_n}, Eqs. (123), (134)
 # ============================================================
 
+"""
+    _cf_ratios(p, ν, dir, nmax; nmax_cf) -> Vector
+
+All continued-fraction ratios along one direction from a SINGLE Lentz call.
+For `dir = +1` returns `out[k] = R_k = f_k/f_{k-1}` (k = 1…nmax); for `dir = -1`
+returns `out[k] = L_{-k} = f_{-k}/f_{-k+1}`.
+
+Only the far anchor (`R_nmax` resp. `L_{-nmax}`) is evaluated by Lentz iteration;
+the interior ratios are peeled off by unrolling the continued fraction itself,
+
+    R_n = -γ_n / (β_n + α_n R_{n+1}),     L_n = -α_n / (β_n + γ_n L_{n-1}),
+
+at O(1) cost each.  Peeling toward n = 0 is the stable (minimal-solution)
+direction — it is one step of backward recurrence for the ratio — and each peeled
+value equals the Lentz value of the same CF truncated at the (deeper) anchor
+tail, so results agree with per-n Lentz evaluation to rounding.  This turns the
+old O(nmax × CF-depth) work of one Lentz call PER n into O(nmax + CF-depth).
+
+`_strip_radius` keeps Complex{Arb} in point arithmetic, matching the Arb Lentz
+kernel (arb_compat.jl); it is a no-op for Float64/BigFloat/MultiFloat.
+"""
+function _cf_ratios(p::MSTParams, ν, dir::Int, nmax::Int; nmax_cf::Int=2000)
+    T = typeof(p.ϵ)
+    out = Vector{T}(undef, nmax)
+    nmax == 0 && return out
+    tiny = T(eps(real(T))^2)
+    # Fresh-start guard: near a CF pole (f at the previous index ≈ 0, e.g. at
+    # near-integer real ν) the peel denominator cancels and the peeled ratio
+    # loses bits that would propagate inward; and non-finite parameters (ν=NaN)
+    # would otherwise poison every interior ratio, where per-n Lentz degrades
+    # gracefully.  In both cases fall back to a direct Lentz evaluation for
+    # that single n and continue peeling from it — worst case this degrades to
+    # the old one-Lentz-per-n behavior exactly where it behaved differently.
+    cancel_floor = sqrt(sqrt(eps(real(T))))   # ≳ quarter of the working bits lost
+    if dir == +1
+        out[nmax] = Rn_cf(p, ν, nmax; nmax=nmax_cf)
+        for k in nmax-1:-1:1
+            be = βn(p, ν, k); alr = αn(p, ν, k) * out[k+1]
+            den = be + alr
+            if !isfinite(abs(den)) || abs(den) < cancel_floor * (abs(be) + abs(alr))
+                out[k] = Rn_cf(p, ν, k; nmax=nmax_cf)
+                continue
+            end
+            iszero(den) && (den = tiny)
+            out[k] = _strip_radius(-γn(p, ν, k) / den)
+        end
+    else
+        out[nmax] = Ln_cf(p, ν, -nmax; nmax=nmax_cf)
+        for k in nmax-1:-1:1
+            n = -k
+            be = βn(p, ν, n); gal = γn(p, ν, n) * out[k+1]   # out[k+1] = L_{n-1}
+            den = be + gal
+            if !isfinite(abs(den)) || abs(den) < cancel_floor * (abs(be) + abs(gal))
+                out[k] = Ln_cf(p, ν, n; nmax=nmax_cf)
+                continue
+            end
+            iszero(den) && (den = tiny)
+            out[k] = _strip_radius(-αn(p, ν, n) / den)
+        end
+    end
+    return out
+end
+
 # Fill f_n for n = ±1, ±2, … out to |n| = nmax along ONE direction (`step` = +1
-# forward via Rn_cf, −1 backward via Ln_cf), using f_n = (f_n/f_{n∓1})·f_{n∓1}.
+# forward, −1 backward) from the precomputed `_cf_ratios` vector, using
+# f_n = (f_n/f_{n∓1})·f_{n∓1}.
 # When `truncate`, stop once `n_consec` consecutive |f_n| fall below `τol·max|f|`
 # (after ≥ `min_terms` terms) and zero-fill the rest so downstream fn[n] indexing
 # still spans the full -nmax:nmax range.  Both directions share this routine so the
 # forward/backward stopping rule can never drift out of sync.
-function _extend_fn!(f::Dict{Int,T}, p::MSTParams, ν, step::Int, cf,
-                     nmax::Int, nmax_cf::Int, τol, min_terms::Int,
+function _extend_fn!(f::Dict{Int,T}, step::Int, ratios::Vector{T},
+                     nmax::Int, τol, min_terms::Int,
                      n_consec::Int, truncate::Bool) where {T}
     RT = real(T)
     fmax = one(RT); nsmall = 0; nstop = step * nmax
     n = step
     while abs(n) <= nmax
-        ratio = cf(p, ν, n; nmax=nmax_cf)
-        f[n] = ratio * f[n - step]
+        f[n] = ratios[abs(n)] * f[n - step]
         af = abs(f[n]); fmax = max(fmax, af)
         nsmall = af < τol * fmax ? nsmall + 1 : 0
         if truncate && abs(n) >= min_terms && nsmall >= n_consec
@@ -146,8 +209,10 @@ function compute_fn(p::MSTParams, ν; nmax::Int=80, nmax_cf::Int=2000,
     τol = truncate ? RT(tol) : zero(RT)
     f = Dict{Int, T}()
     f[0] = one(T)
-    _extend_fn!(f, p, ν, +1, Rn_cf, nmax, nmax_cf, τol, min_terms, n_consec, truncate)
-    _extend_fn!(f, p, ν, -1, Ln_cf, nmax, nmax_cf, τol, min_terms, n_consec, truncate)
+    _extend_fn!(f, +1, _cf_ratios(p, ν, +1, nmax; nmax_cf=nmax_cf),
+                nmax, τol, min_terms, n_consec, truncate)
+    _extend_fn!(f, -1, _cf_ratios(p, ν, -1, nmax; nmax_cf=nmax_cf),
+                nmax, τol, min_terms, n_consec, truncate)
     return f
 end
 
@@ -168,14 +233,16 @@ function compute_fn_truncated(p::MSTParams, ν, nmin::Int; nmax::Int=80,
     n0 = max(0, nmin)
     f[n0] = one(T)
 
+    R = _cf_ratios(p, ν, +1, nmax; nmax_cf=nmax_cf)
     for n in n0+1:nmax
-        R = Rn_cf(p, ν, n; nmax=nmax_cf)
-        f[n] = R * f[n-1]
+        f[n] = R[n] * f[n-1]
     end
 
-    for n in n0-1:-1:nmin
-        L = Ln_cf(p, ν, n; nmax=nmax_cf)
-        f[n] = L * f[n+1]
+    if nmin < 0
+        L = _cf_ratios(p, ν, -1, -nmin; nmax_cf=nmax_cf)
+        for n in n0-1:-1:nmin
+            f[n] = L[-n] * f[n+1]
+        end
     end
 
     return f

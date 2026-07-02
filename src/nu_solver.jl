@@ -118,12 +118,25 @@ end
     _monodromy_value(ctx, n)
 
 Evaluate cos(2πν) from a prebuilt `ctx` at truncation `n` (requires
-`n ≤ ctx.nfilled`).  Identical closed form to `monodromy_cos2pi_nu`.
+`n ≤ ctx.nfilled`).  Identical closed form to `monodromy_cos2pi_nu`, with a
+resonance-safe fallback: if the standard factored form comes back non-finite
+(the PIA resonance — see `_monodromy_value_safe`), the pole-free marching-Γ
+evaluation of the SAME expression is used instead.
 """
 function _monodromy_value(ctx::_MonodromyCtx{R,C}, n::Int) where {R,C}
     a1, a2 = ctx.a1, ctx.a2
     Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
     μ1C, μ2C = ctx.μ1C, ctx.μ2C
+
+    # PIA-resonance gate: when μd = μ1C − μ2C sits (numerically) ON an integer —
+    # exactly what happens for ω = iσ with 4σ ∈ ℤ, where μd = −2s − 4σ cancels
+    # EXACTLY — the factored Γ(±μd)·Poch form below is an exact 0·∞.  Depending
+    # on precision that yields NaN or, worse, FINITE GARBAGE (verified: at
+    # σ = 2, 300 bits it returned a finite ν whose CF residual is O(10)), so
+    # detect the resonance up front rather than testing the result.
+    if _monodromy_resonant(μ1C - μ2C)
+        return _monodromy_value_safe(ctx, n)
+    end
 
     jmax = cld(n, 2)
     a1sum = _cgamma(-μ2C + μ1C) * sum(a1[j+1] * Poch_p[n-j+1] for j in 0:jmax)
@@ -136,8 +149,55 @@ function _monodromy_value(ctx::_MonodromyCtx{R,C}, n::Int) where {R,C}
     # promotes `Arb/Complex{Arb}` to the foreign `Acb` — which then breaks the
     # complex-ω branch (`complex(::Acb)`) downstream.  Making it complex first
     # keeps the result Complex{R} for every R; byte-identical for Float64/BigFloat.
-    return cos(π*(μ1C - μ2C)) +
-           (complex(2*R(π)^2) / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
+    v = cos(π*(μ1C - μ2C)) +
+        (complex(2*R(π)^2) / (a1sum * a2sum)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
+    (isfinite(real(v)) && isfinite(imag(v))) && return v
+    return _monodromy_value_safe(ctx, n)
+end
+
+# Is μd = μ1C − μ2C numerically ON an integer (⇒ Γ(±μd) pole / exact-zero
+# Pochhammer factor in the factored monodromy form)?  A generous window is safe:
+# the marching-Γ form matches the factored form to working precision everywhere,
+# so a false positive only changes rounding at the ~eps level.
+function _monodromy_resonant(μd)
+    return abs(imag(μd)) < 1e-3 && abs(real(μd) - round(real(μd))) < 1e-3
+end
+
+"""
+    _monodromy_value_safe(ctx, n)
+
+Pole-free evaluation of the SAME cos(2πν) closed form, for the PIA resonance.
+
+For purely-imaginary ω = iσ the parameter μd = μ1C − μ2C = −2s + 2iε = −2s − 4σ
+is REAL and hits an exact integer whenever 4σ ∈ ℤ (independent of s, l, m, a —
+2s is an even integer).  There the standard factored form degenerates:
+Γ(±μd) sits exactly on a pole while the Pochhammer products (±μd)_k contain an
+exact zero factor, so `Γ · Σ(Poch·a)` is an exact 0·∞ → NaN.  The pole is an
+artifact of the FACTORING, not of the expression: Γ(z)·(z)_k = Γ(z+k) exactly,
+and every Γ argument appearing in the sums is μd + (n−j) with n−j ≥ n/2 ≫ |μd|
+— far from any pole.  So evaluate the products directly: seed g = Γ(±μd + n)
+once and march it down with one division per term, Γ(z−1) = Γ(z)/(z−1).
+
+Off resonance this matches the standard form to working precision (verified to
+~1e-76 at 256 bits); it is only invoked when the standard form is non-finite.
+"""
+function _monodromy_value_safe(ctx::_MonodromyCtx{R,C}, n::Int) where {R,C}
+    a1, a2 = ctx.a1, ctx.a2
+    μd = ctx.μ1C - ctx.μ2C
+
+    jmax = cld(n, 2)
+    g1 = _cgamma(μd + n)         # Γ(μd)·(μd)_{n−j}  ≡ Γ(μd + n − j); j = 0 term
+    g2 = _cgamma(-μd + n)        # Γ(−μd)·(−μd)_{n−j} ≡ Γ(−μd + n − j)
+    t1 = zero(C); t2 = zero(C)
+    for j in 0:jmax
+        t1 += a1[j+1] * g1
+        t2 += (iseven(j) ? a2[j+1] : -a2[j+1]) * g2
+        g1 /= (μd + n - j - 1)   # Γ(z−1) = Γ(z)/(z−1); argument stays ≥ n/2 − |μd|
+        g2 /= (-μd + n - j - 1)
+    end
+
+    return cos(π*μd) +
+           (complex(2*R(π)^2) / (t1 * t2)) * (-1)^(n-1) * a1[n+1] * a2[n+1]
 end
 
 """
@@ -717,6 +777,12 @@ Evaluate cos(2πν) from a prebuilt native-Acb `ctx` at truncation `n` (requires
 `Complex{Arb}` so the adaptive driver and branch extraction match the M1 path.
 """
 function _monodromy_value_acb(ctx::_MonodromyCtxAcb, n::Int; prec::Int=ctx.prec)
+    # PIA-resonance gate (mirrors _monodromy_value): μd = cMp on an integer ⇒
+    # the factored gMp/gMm·Poch form is 0·∞ (NaN or finite garbage) — use the
+    # pole-free marching-Γ form instead.
+    if _monodromy_resonant(Complex{Arb}(ctx.ACcMp))
+        return _monodromy_value_acb_safe(ctx, n; prec=prec)
+    end
     a1, a2 = ctx.a1, ctx.a2
     Poch_p, Poch_m = ctx.Poch_p, ctx.Poch_m
 
@@ -752,7 +818,39 @@ function _monodromy_value_acb(ctx::_MonodromyCtxAcb, n::Int; prec::Int=ctx.prec)
 
     res = Acb(0)
     Arblib.add!(res, cosreg, term; prec=prec)
-    return Complex{Arb}(res)
+    out = Complex{Arb}(res)
+    # PIA-resonance gate (mirrors the generic _monodromy_value): the factored
+    # Γ(±cMp)·Poch form is an exact 0·∞ when μd = μ1C−μ2C = −2s−4σ ∈ ℤ (ω = iσ,
+    # 4σ ∈ ℤ) — fall back to the pole-free marching-Γ evaluation.
+    (isfinite(real(out)) && isfinite(imag(out))) && return out
+    return _monodromy_value_acb_safe(ctx, n; prec=prec)
+end
+
+"""
+    _monodromy_value_acb_safe(ctx, n; prec=ctx.prec) -> Complex{Arb}
+
+Rare-path (PIA resonance) analogue of [`_monodromy_value_safe`](@ref) for the
+native-Acb context: the same pole-free marching-Γ form, run in Complex{Arb}
+arithmetic on the Acb context arrays.  Only reached when the in-place factored
+form returns a non-finite value, so clarity is preferred over in-place speed.
+"""
+function _monodromy_value_acb_safe(ctx::_MonodromyCtxAcb, n::Int; prec::Int=ctx.prec)
+    C  = Complex{Arb}
+    μd = C(ctx.ACcMp)                 # ACcMp = cMp = μ1C − μ2C
+    jmax = cld(n, 2)
+    g1 = _cgamma(μd + n)              # Γ(μd)·(μd)_{n−j} ≡ Γ(μd + n − j)
+    g2 = _cgamma(-μd + n)
+    t1 = zero(C); t2 = zero(C)
+    for j in 0:jmax
+        a1j = C(ctx.a1[j+1]); a2j = C(ctx.a2[j+1])
+        t1 += a1j * g1
+        t2 += (iseven(j) ? a2j : -a2j) * g2
+        g1 /= (μd + n - j - 1)        # Γ(z−1) = Γ(z)/(z−1)
+        g2 /= (-μd + n - j - 1)
+    end
+    return cos(π*μd) +
+           (complex(2*Arb(π)^2) / (t1 * t2)) * (-1)^(n-1) *
+           C(ctx.a1[n+1]) * C(ctx.a2[n+1])
 end
 
 """

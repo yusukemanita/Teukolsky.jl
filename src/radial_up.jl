@@ -79,29 +79,32 @@ function Rup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeo
         return val
     end
 
-    # fUp_n coefficient
-    function fup(n::Int)
-        fn_n = get(fn, n, zero(typeof(p.ϵ)))
-        iszero(fn_n) && return zero(typeof(p.ϵ))
-        (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
-                 pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
-    end
+    # fUp_n weight (-1)^n (aw)_n/(bw)_n carried incrementally per direction —
+    # O(1) work per term instead of two O(|n|) pochhammer(·,n) calls (O(nmax²)
+    # total at full precision); see compute_Aminus for the ratio derivation.
+    T = typeof(p.ϵ)
+    aw = ν + 1 + s - im*ϵ
+    bw = ν + 1 - s + im*ϵ
 
     # Sum bidirectionally
-    result = zero(typeof(p.ϵ))
+    result = zero(T)
+    w = one(T)                       # (-1)^n (aw)_n/(bw)_n at the current n
     for n in 0:nmax
-        fu = fup(n)
-        iszero(fu) && continue
-        term = prefac * fu * get_hu(n)
+        n > 0 && (w = _strip_radius(-w * (aw + (n - 1)) / (bw + (n - 1))))
+        fn_n = get(fn, n, zero(T))
+        iszero(fn_n) && continue
+        term = prefac * (w * fn_n) * get_hu(n)
         result += term
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = zero(typeof(p.ϵ))
+    res_down = zero(T)
+    w = one(T)
     for n in -1:-1:-nmax
-        fu = fup(n)
-        iszero(fu) && continue
-        term = prefac * fu * get_hu(n)
+        w = _strip_radius(-w * (bw + n) / (aw + n))
+        fn_n = get(fn, n, zero(T))
+        iszero(fn_n) && continue
+        term = prefac * (w * fn_n) * get_hu(n)
         res_down += term
         abs(term) < tol * abs(res_down) + tol && break
     end
@@ -215,28 +218,30 @@ function dRup(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(type
         return val
     end
 
-    function fup(n::Int)
-        fn_n = get(fn, n, zero(typeof(p.ϵ)))
-        iszero(fn_n) && return zero(typeof(p.ϵ))
-        (-1)^n * pochhammer(ν + 1 + s - im*ϵ, n) /
-                 pochhammer(ν + 1 - s + im*ϵ, n) * fn_n
-    end
+    # fUp_n weight carried incrementally per direction (see Rup above).
+    T = typeof(p.ϵ)
+    aw = ν + 1 + s - im*ϵ
+    bw = ν + 1 - s + im*ϵ
 
     # Sum: dRup/dr = Σ fUp_n * (dprefac * HU[n] + prefac * dHU[n] * dzhatdr)
-    result = zero(typeof(p.ϵ))
+    result = zero(T)
+    w = one(T)                       # (-1)^n (aw)_n/(bw)_n at the current n
     for n in 0:nmax
-        fu = fup(n)
-        iszero(fu) && continue
-        term = fu * (dprefac * get_hu(n) + prefac_dzdr * get_dhu(n))
+        n > 0 && (w = _strip_radius(-w * (aw + (n - 1)) / (bw + (n - 1))))
+        fn_n = get(fn, n, zero(T))
+        iszero(fn_n) && continue
+        term = (w * fn_n) * (dprefac * get_hu(n) + prefac_dzdr * get_dhu(n))
         result += term
         n > 0 && abs(term) < tol * abs(result) + tol && break
     end
 
-    res_down = zero(typeof(p.ϵ))
+    res_down = zero(T)
+    w = one(T)
     for n in -1:-1:-nmax
-        fu = fup(n)
-        iszero(fu) && continue
-        term = fu * (dprefac * get_hu(n) + prefac_dzdr * get_dhu(n))
+        w = _strip_radius(-w * (bw + n) / (aw + n))
+        fn_n = get(fn, n, zero(T))
+        iszero(fn_n) && continue
+        term = (w * fn_n) * (dprefac * get_hu(n) + prefac_dzdr * get_dhu(n))
         res_down += term
         abs(term) < tol * abs(res_down) + tol && break
     end

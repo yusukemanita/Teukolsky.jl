@@ -108,12 +108,17 @@ function _lentz_cf(a, b, ::Type{Complex{Arb}}; tol, maxiter::Int)
     T       = Complex{Arb}
     tiny    = T(eps(Arb)^2)
     one_arb = one(Arb)
+    sqrt_tol = sqrt(tol)       # deep-floor fast path for the stall exit
     f = tiny; C = f; D = zero(T)
     best_f = f
     best_d = Arb(Inf)
     stalls = 0                 # consecutive iterations with no |Δ−1| improvement
+    arbitrations = 0           # bottom-up arbitration budget (see stall exit)
+    av = T[]; bv = T[]         # coefficient cache for the stall-exit arbiter
+    sizehint!(av, 64); sizehint!(bv, 64)
     for j in 1:maxiter
         aj = a(j); bj = b(j)  # a, b are closures of the CF index j (see recurrence.jl)
+        push!(av, aj); push!(bv, bj)
         D = _strip_radius(bj + aj * D); iszero(D) && (D = tiny)
         D = _strip_radius(inv(D))
         C = _strip_radius(bj + aj / C); iszero(C) && (C = tiny)
@@ -126,11 +131,43 @@ function _lentz_cf(a, b, ::Type{Complex{Arb}}; tol, maxiter::Int)
         # so |Δ−1| descends to a floor and plateaus.  Stop there instead of
         # churning every iteration to the cap; the point arithmetic keeps the
         # midpoint stable, so the best iterate IS the most accurate value.
+        #
+        # The plateau exit must NOT fire on a transient: the backward (Ln) CF at
+        # ω = iσ, σ ≳ 13 has a NON-MONOTONIC |Δ−1| transient longer than 24
+        # iterations BEFORE genuine convergence begins, and an ungated exit
+        # returned a stale O(1)-wrong early iterate as "converged" (silently —
+        # relΔ ≈ 0.4 at every precision).  Gates, in order:
+        #   (1) best_d < √tol: floor already below half the working precision —
+        #       unambiguously genuine, exit immediately (fast path).
+        #   (2) otherwise ARBITRATE: re-evaluate the SAME truncated CF bottom-up
+        #       over the cached coefficients (tail-to-head is forward-stable, no
+        #       cancellation).  A genuine floor agrees with the top-down iterate
+        #       to ~best_d; a transient's stale iterate is O(1) wrong → reject
+        #       and keep iterating.  Cost: one division per cached term, only
+        #       when a shallow plateau is suspected.
         if d < best_d
             best_d = d; best_f = f; stalls = 0
         else
             stalls += 1
-            stalls ≥ 24 && return best_f, true
+            if stalls ≥ 24
+                best_d < sqrt_tol && return best_f, true
+                # a "floor" worse than 3 digits is no floor; and cap the number
+                # of arbitrations so a persistently-rejecting plateau costs at
+                # most O(few · j) extra divisions, not O(maxiter²/24).
+                if best_d < Arb(1e-3) && arbitrations < 4
+                    arbitrations += 1
+                    fb = zero(T)
+                    for k in length(av):-1:1
+                        fb = _strip_radius(av[k] / (bv[k] + fb))
+                    end
+                    # Geometric-mean acceptance: a genuine floor's ACCUMULATED
+                    # top-down error is O(few·10)·best_d ≪ √best_d, while a
+                    # transient's stale iterate is O(1) wrong ≫ √best_d (which
+                    # is < 0.032 under the 1e-3 gate).  Robust on both sides.
+                    abs(fb - best_f) ≤ sqrt(best_d) * abs(fb) && return best_f, true
+                end
+                stalls = 0                # transient — keep iterating
+            end
         end
     end
     return best_f, false

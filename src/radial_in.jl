@@ -59,29 +59,34 @@ function _Rin_raw(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(
         return val
     end
 
+    # prefac is hoisted out of the term loops (one complex multiply per term
+    # saved); the absolute part of the stopping test is rescaled by 1/|prefac|
+    # so the truncation decisions are identical to the un-hoisted form.
+    tol_abs = tol / abs(prefac)
+
     result = zero(typeof(p.ϵ))
     for n in 0:nmax
         fn_n = get(fn, n, zero(typeof(p.ϵ)))
         iszero(fn_n) && break
-        term = prefac * fn_n * get_h2f1(n)
+        term = fn_n * get_h2f1(n)
         old = result
         result += term
         result == old && break
-        n > 0 && abs(term) < tol * abs(result) + tol && break
+        n > 0 && abs(term) < tol * abs(result) + tol_abs && break
     end
 
     res_down = zero(typeof(p.ϵ))
     for n in -1:-1:-nmax
         fn_n = get(fn, n, zero(typeof(p.ϵ)))
         iszero(fn_n) && break
-        term = prefac * fn_n * get_h2f1(n)
+        term = fn_n * get_h2f1(n)
         old = res_down
         res_down += term
         res_down == old && break
-        abs(term) < tol * abs(res_down) + tol && break
+        abs(term) < tol * abs(res_down) + tol_abs && break
     end
 
-    return result + res_down
+    return prefac * (result + res_down)
 end
 
 """
