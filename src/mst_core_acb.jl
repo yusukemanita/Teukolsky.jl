@@ -42,9 +42,15 @@ function compute_mst_core_acb(s::Int, l::Int, m::Int, a, ω;
                            Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
             (Complex{Arb}(Arb(real(ν)), Arb(imag(ν))), pp)
         end
-        fn = compute_fn_acb(p, νv; nmax=nmax, nmax_cf=nmax_cf)
-        Ap = compute_Aplus_acb(p, νv, fn; nmax=nmax)
-        Am = compute_Aminus_acb(p, νv, fn; nmax=nmax)
+        # Internal dense-Acb path: fₙ as a Vector{Acb} feeds the A± kernels
+        # directly (no Dict → Acb round-trip); the public Dict is built once
+        # for the returned NamedTuple (fn::Dict is the Rup/qtilde contract).
+        prec = precision   # the working precision (kwarg) = precision(Arb) here
+        fv = _compute_fn_acb_vec(p, νv; nmax=nmax, nmax_cf=nmax_cf)
+        fn = _fn_dict_from_vec(fv, nmax)
+        off = nmax + 1
+        Ap = Complex{Arb}(_Aplus_acb(p, νv, fv, off, -nmax, nmax, prec))
+        Am = Complex{Arb}(_Aminus_acb(p, νv, fv, off, -nmax, nmax, prec))
         return (p=p, ν=νv, fn=fn, Ap=Ap, Am=Am)
     end
 end

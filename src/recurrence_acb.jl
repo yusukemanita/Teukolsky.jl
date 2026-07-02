@@ -208,36 +208,56 @@ function _make_L_coef(n::Int)
 end
 
 """
+    _compute_fn_acb_vec(p, ν; nmax=80, nmax_cf=2000, tol=-1) -> Vector{Acb}
+
+Core-private variant of [`compute_fn_acb`](@ref): identical Lentz/recurrence
+kernel and identical values, but the minimal solution is returned as a DENSE
+`Vector{Acb}` `fv` with `fv[n + nmax + 1] = f^ν_n` (n = -nmax…nmax), skipping
+the per-value `Complex{Arb}` boxing of the public Dict.  Consumed directly by
+the internal A^ν_± vector kernels (`_Aplus_acb`/`_Aminus_acb`) and by
+`compute_mst_core_acb`, which builds the public Dict once via
+[`_fn_dict_from_vec`](@ref).
+"""
+function _compute_fn_acb_vec(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
+    prec = precision(Arb)
+    ctx  = _build_fn_ctx_acb(p, ν; prec=prec)
+    tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
+    off = nmax + 1                       # fv[n + off] = f_n
+    fv = Vector{Acb}(undef, 2*nmax + 1)
+    fv[off] = Acb(1; prec=prec)          # f_0 = 1
+    # forward n = 1..nmax:  f_n = R_n · f_{n-1}
+    for n in 1:nmax
+        conv = _lentz_acb!(ctx, _make_R_coef(n), nmax_cf, tolbf)
+        conv || @warn "compute_fn_acb: Rn CF not converged (n=$n)"
+        Arblib.mul!(ctx.fr, ctx.fr, fv[n - 1 + off]; prec=prec)  # f_n = R_n·f_{n-1}
+        fv[n + off] = Acb(ctx.fr; prec=prec)
+    end
+    # backward n = -1..-nmax:  f_n = L_n · f_{n+1}
+    for n in -1:-1:-nmax
+        conv = _lentz_acb!(ctx, _make_L_coef(n), nmax_cf, tolbf)
+        conv || @warn "compute_fn_acb: Ln CF not converged (n=$n)"
+        Arblib.mul!(ctx.fr, ctx.fr, fv[n + 1 + off]; prec=prec)  # f_n = L_n·f_{n+1}
+        fv[n + off] = Acb(ctx.fr; prec=prec)
+    end
+    return fv
+end
+
+"""
+    _fn_dict_from_vec(fv, nmax) -> Dict{Int,Complex{Arb}}
+
+Public-contract Dict (`fn[n] = f^ν_n`) built once from the dense Acb vector of
+[`_compute_fn_acb_vec`](@ref).
+"""
+_fn_dict_from_vec(fv::Vector{Acb}, nmax::Int) = Dict{Int, Complex{Arb}}(
+    n => Complex{Arb}(fv[n + nmax + 1]) for n in -nmax:nmax)
+
+"""
     compute_fn_acb(p, ν; nmax=80, nmax_cf=2000, tol=-1) -> Dict{Int,Complex{Arb}}
 
 Native-Acb evaluation of the minimal solution f^ν_n for -nmax ≤ n ≤ nmax
 (f_0 = 1).  Full 2·nmax sum (no truncation).  Drop-in for `compute_fn` on an
 `MSTParams{Arb}`; values returned as `Complex{Arb}` to match the generic path.
 """
-function compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
-    prec = precision(Arb)
-    ctx  = _build_fn_ctx_acb(p, ν; prec=prec)
-    tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
-    f = Dict{Int, Complex{Arb}}()
-    f[0] = Complex{Arb}(1)
-    fprev = Acb(1; prec=prec)     # running f_{n-1} (forward) / f_{n+1} (backward)
-    # forward n = 1..nmax:  f_n = R_n · f_{n-1}
-    Arblib.set!(fprev, Acb(1; prec=prec))
-    for n in 1:nmax
-        conv = _lentz_acb!(ctx, _make_R_coef(n), nmax_cf, tolbf)
-        conv || @warn "compute_fn_acb: Rn CF not converged (n=$n)"
-        Arblib.mul!(ctx.fr, ctx.fr, fprev; prec=prec)   # f_n = R_n * f_{n-1}
-        f[n] = Complex{Arb}(ctx.fr)
-        Arblib.set!(fprev, ctx.fr)
-    end
-    # backward n = -1..-nmax:  f_n = L_n · f_{n+1}
-    Arblib.set!(fprev, Acb(1; prec=prec))
-    for n in -1:-1:-nmax
-        conv = _lentz_acb!(ctx, _make_L_coef(n), nmax_cf, tolbf)
-        conv || @warn "compute_fn_acb: Ln CF not converged (n=$n)"
-        Arblib.mul!(ctx.fr, ctx.fr, fprev; prec=prec)   # f_n = L_n * f_{n+1}
-        f[n] = Complex{Arb}(ctx.fr)
-        Arblib.set!(fprev, ctx.fr)
-    end
-    return f
-end
+compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1) =
+    _fn_dict_from_vec(
+        _compute_fn_acb_vec(p, ν; nmax=nmax, nmax_cf=nmax_cf, tol=tol), nmax)
