@@ -171,9 +171,13 @@ end
 Three rules of use:
 
 1. **It is a starting point, not a guarantee** — keep a cheap verify-and-escalate
-   backstop in production (check the result is finite; on failure climb a BigFloat
-   ladder starting at `h.bits`).  The predictor mildly over-provisions on purpose,
-   so a single solve almost always suffices.
+   backstop in production: check the result is finite, and on failure retry `:acb`
+   one or two rungs up the bit ladder (more `:acb` bits is 2.8–7.6× cheaper than
+   BigFloat at equal bits).  Keep ONE BigFloat attempt as the *last* resort — it
+   runs the independent generic kernels, so it separates "needs more bits" from
+   "implementation bug" (if BigFloat succeeds at the same bits where `:acb`
+   failed, that is a bug report).  The predictor mildly over-provisions on
+   purpose, so a single solve almost always suffices.
 2. **Don't hand it fewer bits hoping for speed.**  Below the envelope you get
    finite *garbage*, not an error — that failure mode is exactly what this
    function exists to prevent.
