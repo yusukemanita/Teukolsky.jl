@@ -6,7 +6,12 @@ function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
-    prefactor = exp(-π*ϵ/2) * exp(π*im*(ν+1-s)/2) *
+    # π at FULL working precision.  The old `exp(π*im*(ν+1-s)/2)` evaluated
+    # `π*im` FIRST, promoting π through Complex{Bool} to Float64 — a silent
+    # 1.2e-16 relative error in the prefactor phase at EVERY precision
+    # (BigFloat/Arb included).  Found by the native-Acb prefactor arbiter.
+    πT = real(T)(π)
+    prefactor = exp(-πT*ϵ/2) * exp(im*πT*(ν+1-s)/2) *
                 T(2)^(-1+s-im*ϵ) *
                 _cgamma(ν + 1 - s + im*ϵ) / _cgamma(ν + 1 + s - im*ϵ)
 
@@ -19,9 +24,12 @@ function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
 
+    # Full-precision π — see compute_Aplus (the old `-π*im*…` truncated π to
+    # Float64 via Complex{Bool} promotion, a 1.2e-16 phase error at all precisions).
+    πT = real(T)(π)
     prefactor = T(2)^(-1-s+im*ϵ) *
-                exp(-π*im*(ν+1+s)/2) *
-                exp(-π*ϵ/2)
+                exp(-im*πT*(ν+1+s)/2) *
+                exp(-πT*ϵ/2)
 
     # Weights w(n) = (-1)^n (aw)_n/(bw)_n built by the incremental ratios
     #   w(n) = -w(n-1)·(aw+n-1)/(bw+n-1)   (ascending),
