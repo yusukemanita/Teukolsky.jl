@@ -40,8 +40,10 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typ
 
     ϵp = p.ϵp  # = (ε+τ)/2
 
-    # Prefactor for R^ν_+
-    prefac = 2^ν * exp(-π*ϵ) * exp(im*π*(ν + 1 - s)) *
+    # Prefactor for R^ν_+  (πT: full-precision π — -π*ϵ / im*π*… would round
+    # π through Float64/ComplexF64 and cap every high-precision Rdown at ~1e-16)
+    πT = real(typeof(p.ϵ))(π)
+    prefac = 2^ν * exp(-πT*ϵ) * exp(im*πT*(ν + 1 - s)) *
              _cgamma(complex(ν + 1 - s + im*ϵ)) / _cgamma(complex(ν + 1 + s - im*ϵ)) *
              exp(-im*zhat) * zhat^(ν + im*ϵp) *
              (zhat - ϵ*κ)^(-s - im*ϵp)

@@ -57,7 +57,8 @@ function q_from_core(core)
     ε, κ, ω_c = p.ϵ, p.κ, p.ω    # ε = 2ω (M=1)
     branch    = exp(-2im * ε * log(ε))     # ε^{-2iε}, principal branch of log
     phase     = exp(im * ε * (1 - κ))      # e^{iε(1-κ)}
-    monodromy = 1 - exp(2π * (ε - im*core.ν))  # 1 - e^{2π(ε-iν)}
+    twoπ      = 2 * real(typeof(ε))(π)    # 2π at working precision (2π is Float64)
+    monodromy = 1 - exp(twoπ * (ε - im*core.ν))  # 1 - e^{2π(ε-iν)}
     return im * (core.Ap / core.Am) * ω_c^(2s) * branch * phase * monodromy
 end
 
@@ -106,7 +107,8 @@ function qtilde_from_core(core)
     ε, κ, ω_c = p.ϵ, p.κ, p.ω
     branch    = exp(2im * ε * log(ε))      # ε^{+2iε}  (sign flipped vs q)
     phase     = exp(-im * ε * (1 - κ))    # e^{-iε(1-κ)} (sign flipped)
-    monodromy = 1 - exp(2π * (ε + im*core.ν))  # 1 - e^{2π(ε+iν)} (ν sign flipped)
+    twoπ      = 2 * real(typeof(ε))(π)    # 2π at working precision (2π is Float64)
+    monodromy = 1 - exp(twoπ * (ε + im*core.ν))  # 1 - e^{2π(ε+iν)} (ν sign flipped)
     return im * (core.Am / core.Ap) * ω_c^(-2s) * branch * phase * monodromy
 end
 
