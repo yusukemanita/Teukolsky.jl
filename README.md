@@ -1,11 +1,11 @@
 # Teukolsky.jl
 
 A Julia implementation of the **Mano–Suzuki–Takasugi (MST)** formalism for the
-homogeneous [Teukolsky equation](https://en.wikipedia.org/wiki/Teukolsky_equation),
+homogeneous Teukolsky equation,
 together with the angular sector, Kerr geodesics, and point-particle gravitational-wave
 fluxes. It is a Julia port of the core functionality of the
-[Black Hole Perturbation Toolkit](https://bhptoolkit.org)'s Mathematica `Teukolsky`
-package, written to run at **arbitrary (BigFloat) precision**.
+Mathematica [`Teukolsky` paclet](https://bhptoolkit.org/Teukolsky/),
+written to run at **arbitrary (BigFloat) precision**.
 
 Convention: geometrized units `G = c = 1` and black-hole mass `M = 1`.
 Following Sasaki & Tagoshi, *Living Rev. Rel.* **6** (2003) 6.
@@ -177,7 +177,7 @@ source) for the full mathematical structure.
 ## Validation
 
 Every module is cross-checked against the Mathematica
-[Black Hole Perturbation Toolkit](https://bhptoolkit.org) (`Teukolsky` 1.1.1,
+[`Teukolsky` paclet](https://bhptoolkit.org/Teukolsky/) (v1.1.1, with
 `SpinWeightedSpheroidalHarmonics`, `KerrGeodesics`) via `wolframscript`:
 
 - **ν / amplitudes** — match `RenormalizedAngularMomentum` on all branches;
@@ -354,5 +354,5 @@ at genuine arbitrary precision for both Schwarzschild and Kerr. Known edges:
 - M. Sasaki and H. Tagoshi, *Analytic Black Hole Perturbation Approach to
   Gravitational Radiation*, Living Rev. Rel. **6** (2003) 6.
 - S. A. Teukolsky, *Perturbations of a rotating black hole*, ApJ **185** (1973) 635.
-- [Black Hole Perturbation Toolkit](https://bhptoolkit.org) (Mathematica reference
+- [`Teukolsky` paclet](https://bhptoolkit.org/Teukolsky/) (Mathematica reference
   implementation).
