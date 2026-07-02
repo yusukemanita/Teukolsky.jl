@@ -69,6 +69,8 @@ Low-level entry points are also exported:
 amp  = compute_amplitudes(-2, 2, 2, 0.0, 0.5) # NamedTuple: Binc, Bref, Btrans, Ctrans, ν, fn, ...
 fn   = compute_fn(p, ν)                        # MST coefficients f_n (Dict)
 Rin(p, ν, fn, 10.0)                            # bare ingoing solution
+Rup(p, ν, fn, 10.0)                            # upgoing solution (Rdown: third solution, enters q̃)
+dRin(p, ν, fn, 10.0); dRup(p, ν, fn, 10.0)     # r-derivatives
 ```
 
 ### Arbitrary precision
@@ -77,6 +79,33 @@ Rin(p, ν, fn, 10.0)                            # bare ingoing solution
 setprecision(BigFloat, 256) do
     tr = TeukolskyRadial(-2, 2, 2, big"0.9", big"0.5")
     tr.In(big"10.0")    # full BigFloat-accurate radial value
+end
+```
+
+### Branch-cut coefficients and the shared MST core
+
+For Green's-function / branch-cut work (ω on the positive imaginary axis), one
+core solve feeds everything — ν, `f_n`, and A^ν_± are computed ONCE and reused:
+
+```julia
+using Arblib: Arb
+
+setprecision(Arb, 320) do
+    ω    = Complex{Arb}(Arb(0), Arb(43)/10)            # ω = 4.3i on the branch cut
+    core = compute_mst_core(-2, 2, 2, Arb(7)/10, ω)    # Arb inputs → native :acb chain
+    qt   = qtilde_from_core(core)                      # branch-cut coefficient q̃(ω)
+    q    = q_from_core(core)                           # branch-cut coefficient q(ω)
+    ru   = Rup(core.p, core.ν, core.fn, Arb(10); ctrans=mst_ctrans(core))
+end
+```
+
+One-call versions solve the core internally and return `(q, ν, p, Ap, Am)` /
+`(qtilde, ν, p, Ap, Am)`:
+
+```julia
+setprecision(BigFloat, 320) do
+    compute_q(-2, 2, 2, big"0.7", im*big"4.3")        # q(ω):  branch-cut strength of R^up
+    compute_qtilde(-2, 2, 2, big"0.7", im*big"4.3")   # q̃(ω):  branch-cut strength of R^down
 end
 ```
 
@@ -159,6 +188,12 @@ Three rules of use:
 SpinWeightedSpheroidalEigenvalue(-2, 2, 2, 0.45)       # λ = A_lm, oblateness γ = aω
 SpinWeightedSpheroidalHarmonicS(-2, 2, 2, 0.9, 0.5, π/3)          # S_lm(θ) for a, ω
 SpinWeightedSpheroidalHarmonicS(-2, 2, 2, 0.9, 0.5, π/3; deriv=1) # dS/dθ
+
+# lower level: eigenvalue, bare spin-weighted spherical harmonic, and the
+# spherical–spheroidal mixing coefficients (S_lm = Σ_l′ C[l′]·ₛY_{l′m})
+compute_lambda(-2, 2, 2, 0.9, 0.5)
+sYlm(-2, 2, 2, π/3)
+ells, C = swsh_coefficients(-2, 2, 2, 0.9, 0.5)
 ```
 
 ### Kerr geodesics
@@ -193,6 +228,30 @@ nu_pn(-2, 2, 2, 0.0; order=4)      # low-frequency (PN) expansion of ν as a ser
 lambda_pn(-2, 2, 2, 0.0; order=4)  # PN expansion of the eigenvalue λ
 ```
 
+### Frequency-domain Green's function & time-domain waveform
+
+```julia
+wp = WaveformParams(s=-2, l=2, m=2, a=0.0, N=100, ω_max=6.0, Nt=64)
+
+green_function(wp, 0.5)                  # retarded G(ω) at one frequency
+t, ψ, GF, ωs = compute_waveform(wp)      # ψ(t) by inverse FFT of G on the ω-grid
+```
+
+`compute_waveform` samples `G(ω)` on an `N`-point grid up to `ω_max` (mirrored by
+`G(−ω) = conj G(ω)`, so ψ is real to rounding) and returns the time grid, waveform,
+Green's-function samples, and frequency grid.  Type-generic: `BigFloat` parameters
+give a `Complex{BigFloat}` waveform.
+
+### Independent numerical cross-check
+
+```julia
+ni = NumericalIntegrationRadial(-2, 2, 2, 0.0, 0.5)   # adaptive Dormand–Prince solver
+ni.In(10.0)                                            # same conventions as TeukolskyRadial
+```
+
+An MST-free radial solver used to cross-validate `R_in`/`R_up` (accuracy capped at
+~10⁻²⁰ by the DP5 order — a cross-check, not a deep-precision production path).
+
 ---
 
 ## How it works
@@ -224,58 +283,32 @@ source) for the full mathematical structure.
 
 ---
 
-## Validation
-
-Every module is cross-checked against the Mathematica
-[`Teukolsky` paclet](https://bhptoolkit.org/Teukolsky/) (v1.1.1, with
-`SpinWeightedSpheroidalHarmonics`, `KerrGeodesics`) via `wolframscript`:
-
-- **ν / amplitudes** — match `RenormalizedAngularMomentum` on all branches;
-- **spheroidal harmonics** — ~10⁻¹⁵ vs `SpinWeightedSpheroidalHarmonicS`;
-- **geodesics** — ~10⁻¹³ vs `KerrGeodesics`;
-- **fluxes** — energy flux to infinity ~10⁻⁹ vs `TeukolskyPointParticleMode`;
-- **precision** — radial solutions self-converge to ~10⁻⁷⁴ at 512 bits, with the
-  Wronskian constant to ~10⁻²¹–10⁻⁴⁴ (a reference-free precision metric).
-
-Reference data is committed under `test/` (`*_ref.txt`) alongside the generators
-(`*.wls`). Run the suite with:
-
-```bash
-julia --project -e 'using Pkg; Pkg.test()'
-# or
-julia --project test/runtests.jl
-```
-
-The suite has 18 testsets covering the Wolfram grid, the BigFloat precision gate,
-Wronskian constancy, spheroidal harmonics, the numerical backend, elliptic
-integrals, geodesics, PN series, and point-particle fluxes.
-
----
-
 ## Performance vs. the Mathematica Teukolsky paclet
 
 Same quantities, same machine, both at ~**100-digit working precision**
 (Julia `:acb` at 336 bits; paclet inputs at 100 digits), s=−2, l=m=2, a=0.7,
 measured sequentially with warm-up excluded.  Operations: the incidence
-amplitude `Binc` and the ingoing radial solution `Rin(10)`, at large \|ω\| on
-the real axis and at a complex angle — the high-frequency / branch-cut regime
-the MST engine is built for.
+amplitude `Binc` and the upgoing radial solution `Rup(10)`, at \|ω\| = 6 on the
+real axis and at a complex angle — a frequency high enough to be demanding but
+where both engines still return answers.
 
 | quantity, ω | Julia `:acb` | `Teukolsky` paclet |
 |---|---|---|
-| `Binc`, ω = 10 | **0.03 s — 99 digits** | 0.27 s — 4.6 certified digits (~12 correct) |
-| `Rin(10)`, ω = 10 | **0.08 s — 89 digits** | 0.32 s — 0 digits (magnitude off by 10⁵) |
-| `Binc`, ω = 10·e^{iπ/3} | **0.06 s — 34 digits** | fails (`ComplexInfinity`) |
-| `Rin(10)`, ω = 10·e^{iπ/3} | **0.02 s — 26 digits** | 0.38 s — 0 digits |
+| `Binc`, ω = 6 | **0.02 s — 98 digits** | 0.31 s — 20 certified digits |
+| `Rup(10)`, ω = 6 | **0.08 s — 93 digits** | 0.70 s — 6 certified digits |
+| `Binc`, ω = 6·e^{iπ/3} | **0.06 s — 94 digits** | 0.34 s — 17 certified digits |
+| `Rup(10)`, ω = 6·e^{iπ/3} | **0.02 s — 95 digits** | 0.54 s — 19 certified digits |
 
 "digits" = decimal digits of agreement with a 700-bit reference (Julia) resp.
-the paclet's own certified significance.  At the complex angle both engines face
-the same intrinsic ~10^(3.4·\|ω\|) cancellation: the 34/26 digits delivered from
-100 working digits ARE that conditioning, and more digits are bought with more
-bits (`suggest_mst_precision` picks them automatically).  The paclet's adaptive
-precision cannot recover past its inputs at this frequency — it self-reports
-≤4.6 good digits on the real axis and fails outright at the complex angle
-(`Power::infy` → `ComplexInfinity`).
+the paclet's own certified significance (its actual agreement with the reference
+matches those certificates: e.g. 24 digits for `Binc` and 7 for `Rup` on the real
+axis).  From the same 100 working digits, the `:acb` chain delivers 93–98 while
+the paclet's internal cancellation leaves 6–20; pushing \|ω\| higher widens the
+gap until the paclet fails outright (at ω = 10 it certifies ≤4.6 digits on the
+real axis and returns `ComplexInfinity` at the complex angle, while `:acb` still
+delivers 89–99 digits there).  Both engines face the same intrinsic
+~10^(3.4·\|ω\|) conditioning — more digits are bought with more bits, which
+`suggest_mst_precision` picks automatically.
 
 Where both engines deliver full precision (moderate \|ω\|), the difference is
 speed alone: the `:acb` chain — in-place ν monodromy kernel, one-anchor CF-ratio
@@ -322,16 +355,29 @@ test/                   test suite + Wolfram reference data
 ## Status & limitations
 
 The full MST stack (λ, ν, amplitudes, `R_in`/`R_up`/`R_down` and derivatives) runs
-at genuine arbitrary precision for both Schwarzschild and Kerr. Known edges:
+at genuine arbitrary precision for both Schwarzschild and Kerr, on the real axis,
+at complex frequencies, and on the branch-cut (positive-imaginary) axis —
+including the PIA resonances 4σ ∈ ℤ, where the monodromy formula degenerates and
+is evaluated by a pole-free reformulation.  Every numerically hazardous kernel
+(continued fractions, the spheroidal eigenvalue branch, the confluent-U seeds)
+is validated against algorithm-independent arbiters (bottom-up CF evaluation,
+Miller recurrence, radius-certified `acb_hypgeom_u`, exact-π MPFR rebuilds), and
+the regression suite (~40 testsets) pins those arbiters, not stored outputs.
 
+Known edges:
+
+- **Large ω costs precision, by physics**: the MST series cancel like
+  ~10^(3.4·\|ω\|), so the required bits grow ~72 per unit \|ω\|
+  (`suggest_mst_precision` encodes the measured envelope; ω = 16 runs routinely
+  at 1280 bits in well under a second per mode).
+- **Spheroidal λ basis**: the spectral basis (`l_max = 20`) is validated to
+  \|aω\| ≈ 10; far beyond that it should be enlarged.
 - **PN series**: Schwarzschild only (a = 0, l ≥ 1); the Kerr case needs the SWSH
   eigenvalue `λ(c)` expansion in the Wolfram `c = aω` convention.
 - **Fluxes**: circular equatorial orbits only; eccentric/generic orbits need the
   full Mino-time orbit integral.
 - **Numerical backend**: DP5 (5th-order) caps deep BigFloat precision at ~10⁻²⁰;
   fine for cross-checking, not for deep-precision production runs.
-- **Large ω**: ν degrades for `Mω ≳ 2` (`Mω = 4`, s=−2, l=m=2 fails even in the
-  Mathematica package).
 
 ---
 
