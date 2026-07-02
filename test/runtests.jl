@@ -255,3 +255,9 @@ include("test_mst_perf_opt.jl")
 # Monodromy truncation-depth envelope (measured 1.04·prec + 13·|ε| start +
 # three-depth acceptance): ν vs deep reference + CF-residual arbiter.
 include("test_monodromy_depth.jl")
+
+# Certified HU/dHU evaluation for R^up: rigorous per-n hypgeom_u truth harness
+# (radius-verified, escalated), outward-march stability across the hostile
+# grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
+# and end-to-end Rup/dRup vs an independent-π direct-sum reference.
+include("test_hu_evaluation.jl")
