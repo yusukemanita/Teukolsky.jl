@@ -244,24 +244,53 @@ function _monodromy_adaptive(s, l, m, a, ω, λ; R, nmax0::Int=60)
         end
         return Complex{R}(R(real(cbig)), R(imag(cbig)))
     end
-    tol  = 16 * eps(R)
-    # Series length needed for |Δcos(2πν)| ≲ 16·eps(R): empirically the number
-    # of correct decimal digits grows as ~12.7 + 0.064·nmax, so reaching
-    # ~log10(2)·prec digits needs nmax ≈ 4.70·prec − 198.  Build a bit deeper so
-    # the verification (value at nmax vs nmax−Δ, both from the same arrays)
-    # passes on the first try and no extension/rebuild is needed.
     prec = precision(R)
     Δ    = 128
-    # High point ≈ 4.71·prec; the verification low point nmax−Δ then sits a
-    # safe ~70 indices (≈4 decimal digits) above the strict requirement.
-    nmax = clamp(ceil(Int, 4.71 * prec), max(nmax0, 120) + Δ, 4000)
+    # Truncation depth: MEASURED envelope, not the old 4.71·prec floor.
+    # Mapping |value(n) − value(n_deep)| against n (n_deep = 4.71·prec + 512,
+    # recurrence at prec+64 guard bits) over σ ∈ {0.25 … 20} (ω = iσ, PIA),
+    # real/complex ω, prec ∈ {256 … 1536}, s ∈ {−2,2}, l ∈ {2,4,10,20},
+    # a ∈ {0.7,0.9} shows a clean geometric decay of ~0.9 bits/step down to the
+    # rounding floor — no plateaus or humps — with the 2^(−prec) crossing at
+    #     n*(prec, |ε|) ≤ 1.04·prec + 13·|ε| + 40      (|ε| = 2|ω|)
+    # across the whole grid (worst slack ≈ 39; l and a are irrelevant; s = +2
+    # costs ≤ 60 over s = −2, absorbed in the constants).  The old 4.71·prec
+    # start was a ~4× overshoot (its "0.064 digits/step" fit does not match the
+    # actual series).  Start at the envelope + 2Δ so the THREE-point acceptance
+    # below passes on the first try; the verify-and-extend loop remains the
+    # backstop for anything outside the mapped envelope.
+    # See test/test_monodromy_depth.jl for the arbiter-backed validation.
+    ωc   = complex(ω)
+    εf   = 2 * hypot(Float64(real(ωc)), Float64(imag(ωc)))   # |ε| = 2|ω|
+    nmax = clamp(ceil(Int, 1.04 * prec + 13 * εf + 40) + 2Δ,
+                 max(nmax0, 120) + 2Δ, 4000)
+    # Acceptance tolerance: RELATIVE 2^(−0.85·prec).  The old 16·eps(R)
+    # (= 2^(−prec+4)) sits BELOW the point-arithmetic noise floor of the closed
+    # form (measured 2^(−prec+6…9) for |c(n)−c(n−Δ)|/|c| at ANY depth), so it
+    # could never be satisfied and the driver always churned to the 4000 cap.
+    # 0.85·prec is comfortably above the noise floor and far below the ν gate
+    # (values still agree with a deep reference to ≲2^(−prec+10)).
+    tol  = ldexp(one(R), -fld(17 * prec, 20))
 
     ctx = _build_monodromy_ctx(s, l, m, a, ω, λ, nmax)
     c   = _monodromy_value(ctx, nmax)
     for _ in 1:32
-        nlo = max(nmax0, nmax - Δ)
-        clo = _monodromy_value(ctx, nlo)
-        abs(c - clo) ≤ tol * abs(c) && return c
+        # THREE-depth acceptance (n, n−Δ, n−2Δ): two evaluations 128 apart could
+        # in principle agree spuriously on a slow stretch; a third point 256
+        # deep (≈230 bits of decay at the measured rate) rules that out.
+        nlo  = max(nmax0, nmax - Δ)
+        nlo2 = max(nmax0, nmax - 2Δ)
+        clo  = _monodromy_value(ctx, nlo)
+        clo2 = _monodromy_value(ctx, nlo2)
+        # Compare MIDPOINTS (`_strip_radius` is a no-op for BigFloat): for
+        # R = Arb the closed-form value is a ball whose radius can exceed the
+        # tolerance at large |ω|, making the rigorous `≤` unsatisfiable even
+        # though the midpoint — the value every consumer actually uses (the
+        # caller strips the radius) — has long converged.
+        cm   = _strip_radius(c)
+        cl1  = _strip_radius(clo)
+        cl2  = _strip_radius(clo2)
+        (abs(cm - cl1) ≤ tol * abs(cm) && abs(cm - cl2) ≤ tol * abs(cm)) && return c
         nmax ≥ 4000 && return c                  # safety cap: best effort
         nmax = min(nmax + 2Δ, 4000)
         _extend_monodromy_ctx!(ctx, nmax)
@@ -869,19 +898,25 @@ avoids a ~7× wasted-work trap:
   ~2^(−0.85·prec).  This makes the driver terminate at the true convergence
   point (≈ the 4.71·prec start for normal modes) instead of churning to 4000.
 
-The starting `nmax` is kept at the proven 4.71·prec floor — the series
-convergence requirement scales with the MODE (≈ |ε|, l), not precision, so a
-precision-only lower start (e.g. 2·prec) under-truncates high-ω modes; the
-4.71·prec floor is what the BigFloat path already uses successfully across the
-mode grid.  The verify-and-extend loop (now able to terminate, thanks to the
-midpoint test) is the backstop for any extreme mode that needs more.
+The starting `nmax` is the MEASURED mode-dependent envelope (see the twin
+comment in `_monodromy_adaptive` and test/test_monodromy_depth.jl):
+n*(prec, |ε|) ≤ 1.04·prec + 13·|ε| + 40 across the mapped grid
+(σ ∈ {0.25…20} PIA + real/complex ω, prec ∈ {256…1536}, s ∈ {−2,2},
+l ∈ {2,4,10,20}, a ∈ {0.7,0.9}), started 2Δ deeper so the three-point
+acceptance passes first try.  The old 4.71·prec start was a ~4× overshoot.
+The verify-and-extend loop is the backstop for any mode outside the envelope,
+with a THREE-depth acceptance (n, n−Δ, n−2Δ) so two evaluations cannot agree
+spuriously on a slow stretch.
 
 Returns `Complex{Arb}`.
 """
 function _monodromy_adaptive_acb(s::Int, l::Int, m::Int, a, ω, λ;
                                  prec::Int=precision(Arb), nmax0::Int=60)
     Δ    = 128
-    nmax = clamp(ceil(Int, 4.71 * prec), max(nmax0, 120) + Δ, 4000)
+    ωc   = complex(ω)
+    εf   = 2 * hypot(Float64(real(ωc)), Float64(imag(ωc)))   # |ε| = 2|ω|
+    nmax = clamp(ceil(Int, 1.04 * prec + 13 * εf + 40) + 2Δ,
+                 max(nmax0, 120) + 2Δ, 4000)
 
     # Midpoint-relative convergence: |mid(c)−mid(clo)| ≤ 2^(−0.85·prec)·|mid(c)|.
     # 0.85·prec leaves margin above the achievable midpoint-agreement floor (so
@@ -895,9 +930,12 @@ function _monodromy_adaptive_acb(s::Int, l::Int, m::Int, a, ω, λ;
     ctx = _build_monodromy_ctx_acb(s, l, m, a, ω, λ, nmax; prec=prec)
     c   = _monodromy_value_acb(ctx, nmax; prec=prec)
     for _ in 1:24
-        nlo = max(nmax0, nmax - Δ)
-        clo = _monodromy_value_acb(ctx, nlo; prec=prec)
-        converged(c, clo) && return c
+        # Three-depth acceptance (n, n−Δ, n−2Δ); see _monodromy_adaptive.
+        nlo  = max(nmax0, nmax - Δ)
+        nlo2 = max(nmax0, nmax - 2Δ)
+        clo  = _monodromy_value_acb(ctx, nlo;  prec=prec)
+        clo2 = _monodromy_value_acb(ctx, nlo2; prec=prec)
+        (converged(c, clo) && converged(c, clo2)) && return c
         nmax ≥ 4000 && return c                  # safety cap: best effort
         nmax = min(nmax + 2Δ, 4000)
         _extend_monodromy_ctx_acb!(ctx, nmax; prec=prec)
