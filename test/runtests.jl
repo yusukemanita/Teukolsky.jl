@@ -251,3 +251,7 @@ include("test_lambda_tracking.jl")
 # Large-ω MST performance work: CF-ratio peeling ≡ per-n Lentz, the
 # hypergeometric_U BigFloat→Arb bridge, and incremental Pochhammer weights.
 include("test_mst_perf_opt.jl")
+
+# Monodromy truncation-depth envelope (measured 1.04·prec + 13·|ε| start +
+# three-depth acceptance): ν vs deep reference + CF-residual arbiter.
+include("test_monodromy_depth.jl")
