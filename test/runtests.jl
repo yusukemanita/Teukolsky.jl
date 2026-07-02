@@ -243,3 +243,7 @@ include("test_native_acb.jl")
 # PIA monodromy resonance (4σ ∈ ℤ ⇒ exact Γ·Poch 0·∞ in the factored form):
 # compute_nu must return CF-residual-validated ν on the resonant grid.
 include("test_pia_resonance.jl")
+
+# Large-ω MST performance work: CF-ratio peeling ≡ per-n Lentz, the
+# hypergeometric_U BigFloat→Arb bridge, and incremental Pochhammer weights.
+include("test_mst_perf_opt.jl")

@@ -83,6 +83,26 @@ function hypergeometric_U(a::Complex{Arb}, b::Complex{Arb}, z::Complex{Arb})
     return Complex{Arb}(Uv)
 end
 
+# Complex{BigFloat}: same routing through Arb's rigorous acb_hypgeom_u, at the
+# working BigFloat precision (+53 guard bits absorbed by Arb's internal ball
+# growth).  This matters because the BigFloat backend is what the precision
+# predictor selects for |ω| ≳ 3.5, exactly where the generic path below is
+# worst: the Kummer relation loses ~|z|·log₂e bits to cancellation and the
+# asymptotic series is capped at ~e^(−|z|) accuracy, so at branch-cut
+# frequencies the per-term U evaluations dominate Rup/dRup wall-clock AND
+# silently force precision inflation.  acb_hypgeom_u selects its small /
+# intermediate / asymptotic zones internally with rigorous error bounds.
+function hypergeometric_U(a::Complex{BigFloat}, b::Complex{BigFloat},
+                          z::Complex{BigFloat})
+    prec = precision(BigFloat) + 53
+    Uv = Acb(0; prec=prec)
+    Arblib.hypgeom_u!(Uv, Acb(Arb(real(a); prec=prec), Arb(imag(a); prec=prec)),
+                          Acb(Arb(real(b); prec=prec), Arb(imag(b); prec=prec)),
+                          Acb(Arb(real(z); prec=prec), Arb(imag(z); prec=prec));
+                      prec=prec)
+    return Complex{BigFloat}(BigFloat(Arb(real(Uv))), BigFloat(Arb(imag(Uv))))
+end
+
 function hypergeometric_U(a, b, z)
     R = real(promote_type(typeof(complex(a)), typeof(complex(z))))
     # Asymptotic-vs-Kummer gate. The asymptotic series is fundamentally limited
@@ -165,6 +185,26 @@ end
         e isa DomainError || rethrow(e)
         return _h2f1_pfaff(a, b, c, x)
     end
+end
+
+# Complex{Arb}: use Arb's OWN rigorous acb_hypgeom_2f1 (mirrors the
+# hypergeometric_U routing above).  HypergeometricFunctions' |x|>1 connection
+# formulas run Γ-heavy generic series on Arb — slow at high precision and prone
+# to the loggamma DomainError → Pfaff detour; acb_hypgeom_2f1 selects the
+# small/intermediate/large-|x| zones internally with rigorous error bounds and
+# handles the near-integer parameter combinations without perturbation guards.
+# Strictly more specific than the generic method, so Float64/BigFloat/MultiFloat
+# dispatch is untouched.
+function _h2f1_robust(a::Complex{Arb}, b::Complex{Arb}, c::Complex{Arb},
+                      x::Complex{Arb})
+    prec = precision(Arb)
+    F = Acb(0; prec=prec)
+    Arblib.hypgeom_2f1!(F, Acb(real(a), imag(a); prec=prec),
+                           Acb(real(b), imag(b); prec=prec),
+                           Acb(real(c), imag(c); prec=prec),
+                           Acb(real(x), imag(x); prec=prec);
+                        flags=0, prec=prec)
+    return Complex{Arb}(F)
 end
 
 struct H2F1Params{T<:Complex}
