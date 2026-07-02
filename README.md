@@ -110,6 +110,49 @@ amp = compute_amplitudes(-2, 2, 2, 0.7, 4.3im; backend=:acb, precision=320)
 suggest_mst_precision(4.3im)   # → (backend = :acb, bits = 320, nmax = 61)
 ```
 
+### Choosing precision automatically: `suggest_mst_precision`
+
+At large \|ω\| the required precision is set by the physics (the ~10^(3.4·\|ω\|)
+cancellation), not by taste.  `suggest_mst_precision(ω; l=2, margin=1.0)` returns
+the measured envelope — **which backend, how many bits, how many series terms** —
+so a driver jumps straight to a working configuration instead of failing upward
+through a retry ladder:
+
+```julia
+suggest_mst_precision(0.5im)   # → (backend = :multifloat, bits = 212, nmax = 40)
+suggest_mst_precision(10im)    # → (backend = :acb,        bits = 768, nmax = 112)
+```
+
+Consume it like this (for `backend = :acb`, pass `Arb` inputs inside
+`setprecision` — `compute_mst_core` dispatches to the native in-place chain):
+
+```julia
+using Arblib: Arb
+
+h = suggest_mst_precision(ω; l=l)
+setprecision(Arb, h.bits) do
+    ωA   = Complex{Arb}(Arb(real(ω)), Arb(imag(ω)))
+    core = compute_mst_core(s, l, m, Arb(a), ωA; nmax=h.nmax)
+    qt   = qtilde_from_core(core)                     # branch-cut coefficient q̃
+    ru   = Rup(core.p, core.ν, core.fn, Arb(r); nmax=h.nmax, ctrans=mst_ctrans(core))
+    qt * ru
+end
+```
+
+Three rules of use:
+
+1. **It is a starting point, not a guarantee** — keep a cheap verify-and-escalate
+   backstop in production (check the result is finite; on failure climb a BigFloat
+   ladder starting at `h.bits`).  The predictor mildly over-provisions on purpose,
+   so a single solve almost always suffices.
+2. **Don't hand it fewer bits hoping for speed.**  Below the envelope you get
+   finite *garbage*, not an error — that failure mode is exactly what this
+   function exists to prevent.
+3. **More delivered digits = more bits**, roughly 2^(bits − 3.4·\|ω\|·log₂10).
+   Raise `margin` (or add bits) if you need extra digits at fixed ω.  `nmax` is
+   calibrated for the s=−2 branch-cut use case; treat it as a floor for unusual
+   regimes.
+
 ### Spin-weighted spheroidal harmonics
 
 ```julia
