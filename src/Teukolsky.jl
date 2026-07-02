@@ -21,6 +21,7 @@ export compute_amplitudes, compute_amplitudes_nufixed
 export compute_amplitudes_mero, compute_amplitudes_nufixed_mero
 export compute_q, compute_qtilde
 export compute_mst_core, qtilde_from_core, q_from_core, mst_ctrans
+export suggest_mst_precision, MST_F64X4_TRUST
 export Rin, dRin, Rup, dRup, Rdown
 export scan_Binc, spectral_Binc_inv
 export pochhammer
@@ -47,6 +48,7 @@ include("params.jl")
 include("utils.jl")
 include("arb_compat.jl")  # Acb-bridge transcendentals for Complex{Arb} (additive)
 include("multifloat_compat.jl")  # MultiFloat shims + precision-backend dispatch (additive)
+include("precision_hint.jl")     # |ω|-driven (backend,bits,nmax) predictor (additive)
 include("elliptic_integrals.jl")  # shared elliptic/Jacobi (before geodesic files)
 include("recurrence.jl")
 include("pn_series.jl")   # PNSeries ring (B6)
