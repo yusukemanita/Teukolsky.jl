@@ -207,12 +207,83 @@ function _make_L_coef(n::Int)
     end
 end
 
+# Midpoint magnitude of an Acb as a Float64 (guard arithmetic only — the guard
+# compares magnitude RATIOS, so Float64 range/precision is ample; overflow to Inf
+# makes the guard trip, which falls back conservatively to a fresh Lentz call).
+@inline _absmid64(x::Acb) = hypot(Float64(Arblib.realref(x)), Float64(Arblib.imagref(x)))
+
+"""
+    _cf_ratios_acb!(ratios, ctx, dir, nmax, nmax_cf, tolbf) -> ratios
+
+Native-Acb CF-ratio peeling — the in-place mirror of the generic `_cf_ratios`
+(recurrence.jl): ONE anchor Lentz evaluation at n = ±nmax, then interior ratios
+peeled by the CF's own backward recursion
+
+    R_n = -γ_n / (β_n + α_n R_{n+1}),     L_n = -α_n / (β_n + γ_n L_{n-1}),
+
+one in-place division each.  `ratios[k]` receives R_k (dir=+1) resp. L_{-k}
+(dir=-1).  The same fresh-start guard as the generic version: on a non-finite
+or heavily-cancelling peel denominator (near-integer-ν CF poles) that single n
+falls back to a direct in-place Lentz evaluation, degrading exactly to the old
+per-n behavior where peeling would lose bits.  Guard magnitudes are Float64
+midpoints (ample for a ratio test; underflows only beyond ~4000 bits, where the
+guard then trips on non-finiteness alone).
+"""
+function _cf_ratios_acb!(ratios::Vector{Acb}, ctx::_FnCtxAcb, dir::Int,
+                         nmax::Int, nmax_cf::Int, tolbf::BigFloat)
+    P = ctx.prec
+    nmax == 0 && return ratios
+    cancel_floor = exp2((1.0 - P) / 4)        # ≈ (eps at prec)^(1/4), cf. generic
+    # anchor: one full Lentz at the far end
+    conv = _lentz_acb!(ctx, dir == +1 ? _make_R_coef(nmax) : _make_L_coef(-nmax),
+                       nmax_cf, tolbf)
+    conv || @warn "compute_fn_acb: anchor CF not converged (dir=$dir, |n|=$nmax)"
+    Arblib.set!(ratios[nmax], ctx.fr)
+    for k in nmax-1:-1:1
+        n = dir == +1 ? k : -k
+        if dir == +1
+            _alpha_acb!(ctx, n)                                # → αo
+            Arblib.mul!(ctx.Dr, ctx.αo, ratios[k+1]; prec=P)   # α_n·R_{n+1}
+        else
+            _gamma_acb!(ctx, n)                                # → γo
+            Arblib.mul!(ctx.Dr, ctx.γo, ratios[k+1]; prec=P)   # γ_n·L_{n-1}
+        end
+        wing = _absmid64(ctx.Dr)
+        _beta_acb!(ctx, n)                                     # → βo (Dr preserved)
+        Arblib.add!(ctx.Dr, ctx.βo, ctx.Dr; prec=P)            # den = β_n + wing
+        den = _absmid64(ctx.Dr)
+        if !isfinite(den) || den < cancel_floor * (_absmid64(ctx.βo) + wing)
+            # fresh start: direct Lentz for this single n (clobbers ctx registers;
+            # everything needed next iteration is recomputed from ratios[k])
+            conv = _lentz_acb!(ctx, dir == +1 ? _make_R_coef(n) : _make_L_coef(n),
+                               nmax_cf, tolbf)
+            conv || @warn "compute_fn_acb: CF not converged (n=$n)"
+            Arblib.set!(ratios[k], ctx.fr)
+            continue
+        end
+        if dir == +1
+            _gamma_acb!(ctx, n)                                # → γo (Dr preserved)
+            Arblib.div!(ratios[k], ctx.γo, ctx.Dr; prec=P)
+        else
+            _alpha_acb!(ctx, n)                                # → αo (Dr preserved)
+            Arblib.div!(ratios[k], ctx.αo, ctx.Dr; prec=P)
+        end
+        Arblib.neg!(ratios[k], ratios[k])
+    end
+    return ratios
+end
+
 """
     compute_fn_acb(p, ν; nmax=80, nmax_cf=2000, tol=-1) -> Dict{Int,Complex{Arb}}
 
 Native-Acb evaluation of the minimal solution f^ν_n for -nmax ≤ n ≤ nmax
 (f_0 = 1).  Full 2·nmax sum (no truncation).  Drop-in for `compute_fn` on an
 `MSTParams{Arb}`; values returned as `Complex{Arb}` to match the generic path.
+
+The CF ratios come from ONE anchor Lentz call per direction plus O(1) in-place
+peeling per n ([`_cf_ratios_acb!`](@ref)) — the same O(nmax·depth) → O(nmax+depth)
+strategy as the generic `_cf_ratios`, on top of the kernel's zero-allocation
+arithmetic.
 """
 function compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
     prec = precision(Arb)
@@ -220,24 +291,21 @@ function compute_fn_acb(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-1)
     tolbf = tol > 0 ? BigFloat(tol) : ldexp(BigFloat(16), -prec)   # 16·eps
     f = Dict{Int, Complex{Arb}}()
     f[0] = Complex{Arb}(1)
-    fprev = Acb(1; prec=prec)     # running f_{n-1} (forward) / f_{n+1} (backward)
-    # forward n = 1..nmax:  f_n = R_n · f_{n-1}
-    Arblib.set!(fprev, Acb(1; prec=prec))
+    ratios = [Acb(0; prec=prec) for _ in 1:max(nmax, 1)]
+    run = Acb(1; prec=prec)       # running product f_{n∓1}
+    # forward: f_n = R_n · f_{n-1}
+    _cf_ratios_acb!(ratios, ctx, +1, nmax, nmax_cf, tolbf)
+    Arblib.set!(run, Acb(1; prec=prec))
     for n in 1:nmax
-        conv = _lentz_acb!(ctx, _make_R_coef(n), nmax_cf, tolbf)
-        conv || @warn "compute_fn_acb: Rn CF not converged (n=$n)"
-        Arblib.mul!(ctx.fr, ctx.fr, fprev; prec=prec)   # f_n = R_n * f_{n-1}
-        f[n] = Complex{Arb}(ctx.fr)
-        Arblib.set!(fprev, ctx.fr)
+        Arblib.mul!(run, run, ratios[n]; prec=prec)
+        f[n] = Complex{Arb}(run)
     end
-    # backward n = -1..-nmax:  f_n = L_n · f_{n+1}
-    Arblib.set!(fprev, Acb(1; prec=prec))
-    for n in -1:-1:-nmax
-        conv = _lentz_acb!(ctx, _make_L_coef(n), nmax_cf, tolbf)
-        conv || @warn "compute_fn_acb: Ln CF not converged (n=$n)"
-        Arblib.mul!(ctx.fr, ctx.fr, fprev; prec=prec)   # f_n = L_n * f_{n+1}
-        f[n] = Complex{Arb}(ctx.fr)
-        Arblib.set!(fprev, ctx.fr)
+    # backward: f_{-k} = L_{-k} · f_{-k+1}
+    _cf_ratios_acb!(ratios, ctx, -1, nmax, nmax_cf, tolbf)
+    Arblib.set!(run, Acb(1; prec=prec))
+    for k in 1:nmax
+        Arblib.mul!(run, run, ratios[k]; prec=prec)
+        f[-k] = Complex{Arb}(run)
     end
     return f
 end
