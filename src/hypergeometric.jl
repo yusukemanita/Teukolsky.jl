@@ -68,6 +68,21 @@ function hypergeometric_U_asymptotic_accuracy(a, b, z)
     return accuracy
 end
 
+# Complex{Arb}: use Arb's OWN rigorous acb_hypgeom_u (Arblib.hypgeom_u!) instead
+# of the Kummer/asymptotic construction below.  At large |z| the Kummer relation
+# catastrophically cancels (off by ~1e42 at |z|≈77) and its near-integer-b Γ-pole
+# guard `round(Int, ·)` NaNs; acb_hypgeom_u is accurate to full precision and
+# handles every b.  This makes the generic Rup recurrence (whose seeds route
+# through here) both correct AND fast at large |ω| for the Arb backend.
+function hypergeometric_U(a::Complex{Arb}, b::Complex{Arb}, z::Complex{Arb})
+    prec = precision(Arb)
+    Uv = Acb(0)
+    Arblib.hypgeom_u!(Uv, Acb(real(a), imag(a); prec=prec),
+                          Acb(real(b), imag(b); prec=prec),
+                          Acb(real(z), imag(z); prec=prec); prec=prec)
+    return Complex{Arb}(Uv)
+end
+
 function hypergeometric_U(a, b, z)
     R = real(promote_type(typeof(complex(a)), typeof(complex(z))))
     # Asymptotic-vs-Kummer gate. The asymptotic series is fundamentally limited

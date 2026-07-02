@@ -234,3 +234,7 @@ include("test_arb_amplitudes.jl")
 # |ω|-driven precision predictor: structure + calibration guard (predicted
 # precision reproduces the branch-cut MST core).
 include("test_precision_hint.jl")
+
+# Native in-place Acb kernels (M3): f^ν_n, A^ν_±, R^up equivalence vs the
+# generic path (fn/A± element-wise; Rup vs a 700-bit reference).
+include("test_native_acb.jl")
