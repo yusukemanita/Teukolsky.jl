@@ -243,3 +243,7 @@ include("test_native_acb.jl")
 # PIA monodromy resonance (4σ ∈ ℤ ⇒ exact Γ·Poch 0·∞ in the factored form):
 # compute_nu must return CF-residual-validated ν on the resonant grid.
 include("test_pia_resonance.jl")
+
+# Spheroidal λ branch tracking: continuity across the former σ≈4.19 jump,
+# PIA sweep smoothness, fine-step continuation arbiter, c→0 limit.
+include("test_lambda_tracking.jl")

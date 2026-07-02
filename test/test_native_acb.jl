@@ -49,18 +49,31 @@ const _relC = (A, g) -> Float64(abs(Complex{BigFloat}(A) - Complex{BigFloat}(g))
 end
 
 @testset "Arb Lentz stall-exit regression (σ ≳ 13.3 backward CF)" begin
-    # Truth certified by two independent arbiters (bottom-up CF at depths
-    # 500–4000 and Miller minimal-solution ratio at N2 = 200–800, agreeing to
-    # ~1e-114 at 384 bits).  Before the √tol conditioning-floor gate the
-    # specialized Complex{Arb} _lentz_cf returned 0.5046−0.0254i here — a stale
-    # early iterate, silently flagged converged, ~40% wrong at EVERY precision.
-    truth = Complex{BigFloat}(BigFloat("0.78938047242565968"),
-                              BigFloat("0.12037823591796105"))
+    # Truth is computed IN-TEST by the algorithm-independent bottom-up (tail-to-
+    # head) evaluation of the same continued fraction — self-arbitrating, so the
+    # test stays valid if upstream parameters (e.g. the λ branch) change.  Before
+    # the conditioning-floor gate the specialized Complex{Arb} _lentz_cf returned
+    # a stale early iterate here, silently flagged converged and ~40% wrong at
+    # EVERY precision; the bottom-up value (cross-checked against the Miller
+    # minimal-solution ratio to ~1e-114 during the fix campaign) is exact.
+    function bottom_up_L(p, ν, K)
+        t = zero(Complex{Arb})
+        for j in K:-1:1
+            aj = j == 1 ? -Teukolsky.αn(p, ν, -1) :
+                          -Teukolsky.γn(p, ν, -1-j+2) * Teukolsky.αn(p, ν, -1-j+1)
+            bj = Teukolsky.βn(p, ν, -1-j+1)
+            t = aj / (bj + t)
+        end
+        return t
+    end
     setprecision(Arb, 384) do
         p = MSTParams(-2,2,2, Arb(7)/10, Complex{Arb}(Arb(0), Arb(16)))
         ν = Complex{Arb}(Arb(49)/10, Arb(-35)/100)
+        truth  = bottom_up_L(p, ν, 2000)
+        truth2 = bottom_up_L(p, ν, 1000)
+        @test _relC(truth2, truth) < 1e-80          # bottom-up depth-converged
         L = Teukolsky.Ln_cf(p, ν, -1; nmax=4000)
-        @test _relC(L, truth) < 1e-15
+        @test _relC(L, truth) < 1e-90
         # Arb path must agree with the (always-correct) BigFloat generic path
         # across the former failure region.
         for σ in (13.5, 16.0, 20.0)

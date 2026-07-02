@@ -180,24 +180,48 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
 
     # Float64 LAPACK eigendecomposition → seed for branch selection / refinement.
     c64 = ComplexF64(c)
-    M64 = zeros(ComplexF64, N, N)
-    for (i, li) in enumerate(ells), (j, lj) in enumerate(ells)
-        M64[i, j] = M_matrix_elem(s, c64, m, li, lj)
-    end
 
     # Eigenvalues of M are SWSHEigenvalueSpectral.
     # SpinWeightedSpheroidalEigenvalue = SWSHEigenvalueSpectral - 2m*c + c²
-    # Branch selection: compare corrected eigenvalues to a perturbative λ to O(c²)
-    # (tracks the correct branch better than a fixed l(l+1)-s(s+1) reference).
-    λ₀ = l*(l+1) - s*(s+1)
-    λ₁ = l > 0 ? -2*m*(1 + s^2 / (l*(l+1))) : zero(Float64)
-    H(ℓ) = ℓ == 0 ? 0.0 : 2*(ℓ^2 - m^2)*(ℓ^2 - s^2) / ((2ℓ-1) * ℓ^3 * (2ℓ+1))
-    λ₂ = l > 0 ? H(l+1) - H(l) : zero(Float64)
-    λ_pert = ComplexF64(λ₀ + c64*λ₁ + c64^2*λ₂)
-
-    F      = eigen(M64)
+    #
+    # BRANCH SELECTION: analytic continuation from c = 0 along the ray t·c,
+    # matching eigenVECTORS by overlap at each step.  At c = 0 the matrix is
+    # diagonal, so the l-branch is exactly the unit vector e_il; each step picks
+    # the eigencolumn maximizing |⟨v_prev, v⟩| and carries it forward.  This is
+    # the defining label of the spheroidal harmonic (the branch continuously
+    # connected to ₛY_lm) and is exact along PIA/real-ω sweeps, whose paths are
+    # precisely this ray.
+    #
+    # The previous scheme — argmin distance to the O(c²) perturbative λ — is
+    # DEGENERATE at branch crossings far from c = 0: at a=0.7, l=m=2, ω=iσ near
+    # σ ≈ 4.1885 two well-separated eigenvalues (Δλ ≈ 1.16) sit at |λ−λ_pert| =
+    # 2.802 vs 2.810 and the argmin flips, jumping λ (and hence ν by ≈0.06)
+    # discontinuously across the sweep.
+    F, idx = let
+        v_prev = zeros(ComplexF64, N); v_prev[il] = 1     # e_il = exact c→0 branch
+        Floc = nothing; k = 0
+        h    = 0.25                                        # max |Δc| per step
+        hmin = h / 64
+        t    = 0.0
+        while t < 1.0
+            t2 = min(t + h/max(abs(c64), eps()), 1.0)
+            Mt = [M_matrix_elem(s, t2*c64, m, li, lj) for li in ells, lj in ells]
+            Ft = eigen(Mt)
+            ovl = [abs(dot(v_prev, view(Ft.vectors, :, j))) for j in 1:N]
+            k2  = argmax(ovl)
+            if ovl[k2] < 0.75 && (t2 - t)*abs(c64) > hmin
+                h /= 2                                     # ambiguous match → refine step
+                continue
+            end
+            v_prev = Ft.vectors[:, k2]
+            Floc, k = Ft, k2
+            t = t2
+            ovl[k2] > 0.95 && (h = min(2h, 0.25))          # relax step when clean
+        end
+        Floc === nothing ? (eigen([M_matrix_elem(s, c64, m, li, lj)
+                                   for li in ells, lj in ells]), il) : (Floc, k)
+    end
     λ_vals = F.values .- 2*m*c64 .+ c64^2
-    idx    = argmin(abs.(λ_vals .- λ_pert))
 
     # phase-fix to (ℓ′=ℓ component real positive) and unit norm
     fixphase(v) = (w = v / norm(v); phref = w[il]; iszero(phref) ? w : w * (conj(phref)/abs(phref)))
