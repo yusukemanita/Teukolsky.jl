@@ -235,6 +235,11 @@ include("test_arb_amplitudes.jl")
 # precision reproduces the branch-cut MST core).
 include("test_precision_hint.jl")
 
-# Native in-place Acb kernels (M3): f^ν_n, A^ν_±, R^up equivalence vs the
-# generic path (fn/A± element-wise; Rup vs a 700-bit reference).
+# Native in-place Acb kernels (M3): f^ν_n, A^ν_± equivalence vs the generic
+# path, the Arb-Lentz stall-exit regression (σ≳13.3 backward CF), and R^up vs
+# a 700-bit reference.
 include("test_native_acb.jl")
+
+# PIA monodromy resonance (4σ ∈ ℤ ⇒ exact Γ·Poch 0·∞ in the factored form):
+# compute_nu must return CF-residual-validated ν on the resonant grid.
+include("test_pia_resonance.jl")

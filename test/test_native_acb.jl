@@ -1,18 +1,80 @@
-# Rigorous confluent-U for the Arb radial solution.
-#
-# The generic Rup recurrence seeds its HypergeometricU via `hypergeometric_U`,
-# which for Complex{Arb} now routes through Arb's rigorous acb_hypgeom_u
-# (src/hypergeometric.jl).  The old Kummer/asymptotic seed catastrophically
-# cancels at large |z| — off by ~1e14 at σ=4 — and its near-integer-b Γ-pole
-# guard NaNs.  Here we verify the Arb Rup (300 bit) matches a 700-bit reference
-# across σ where the old seed failed.  Arbitrary complex ν (both paths share it),
-# decoupled from compute_nu's PIA fragility.
+# Native-Acb kernels (M3) + Arb radial/CF robustness:
+#   * f^ν_n and A^ν_± : native in-place Acb vs the generic Complex{Arb} path
+#     (element-wise / value equivalence).  NOTE the reference history: the first
+#     adversarial review "convicted" these kernels at large σ and near-integer ν,
+#     but the truth arbiters (bottom-up CF evaluation + Miller minimal-solution
+#     recurrence) later PROVED the reference itself was broken — the specialized
+#     Complex{Arb} _lentz_cf stall exit (arb_compat.jl) returned a stale iterate
+#     as converged for σ ≳ 13.3 — and the near-integer-ν deviation is intrinsic
+#     1/δ conditioning shared by every fixed-precision kernel (incl. Miller).
+#   * Arb-Lentz stall regression: Ln_cf on Complex{Arb} at σ=16 must match the
+#     arbiter-certified truth (it was 40% wrong, silently, before the √tol gate).
+#   * R^up : the generic recurrence with rigorous acb_hypgeom_u seeds vs a
+#     700-bit reference (the old Kummer seed was ~1e14 off at σ=4).
+# Uses ARBITRARY complex ν (both paths share it) — decoupled from compute_nu.
 using Test
 using Teukolsky
-using Arblib: Arb
+using Arblib: Arb, Acb
 
 const _relC = (A, g) -> Float64(abs(Complex{BigFloat}(A) - Complex{BigFloat}(g)) /
                                 max(abs(Complex{BigFloat}(g)), BigFloat("1e-300")))
+
+@testset "native-Acb kernels (M3)" begin
+    nmax = 40
+    cases = ((-2,2,2,0.5, Complex(0.5, 0.30)),
+             (-2,3,2,2.0, Complex(1.7,-0.40)),
+             (-2,2,2,4.0, Complex(1.5,-0.47)),
+             ( 2,2,2,1.0, Complex(0.8, 0.20)),
+             (-1,3,1,1.5, Complex(2.1, 0.90)))
+    setprecision(Arb, 300) do
+        for (s,l,m,σ,ν0) in cases
+            p = MSTParams(s, l, m, Arb(7)/10, Complex{Arb}(Arb(0), Arb(σ)))
+            ν = Complex{Arb}(Arb(real(ν0)), Arb(imag(ν0)))
+            fg = compute_fn(p, ν; nmax=nmax)
+            fa = Teukolsky.compute_fn_acb(p, ν; nmax=nmax)
+            @testset "fn s=$s l=$l σ=$σ" begin
+                @test Set(keys(fa)) == Set(keys(fg))
+                @test maximum(_relC(fa[n], fg[n]) for n in -nmax:nmax) < 1e-70
+            end
+            Apg = Teukolsky.compute_Aplus(p, ν, fg; nmax=nmax)
+            Amg = Teukolsky.compute_Aminus(p, ν, fg; nmax=nmax)
+            Apa = Teukolsky.compute_Aplus_acb(p, ν, fa; nmax=nmax)
+            Ama = Teukolsky.compute_Aminus_acb(p, ν, fa; nmax=nmax)
+            @testset "A± s=$s l=$l σ=$σ" begin
+                @test _relC(Apa, Apg) < 1e-70
+                @test _relC(Ama, Amg) < 1e-70
+            end
+        end
+    end
+end
+
+@testset "Arb Lentz stall-exit regression (σ ≳ 13.3 backward CF)" begin
+    # Truth certified by two independent arbiters (bottom-up CF at depths
+    # 500–4000 and Miller minimal-solution ratio at N2 = 200–800, agreeing to
+    # ~1e-114 at 384 bits).  Before the √tol conditioning-floor gate the
+    # specialized Complex{Arb} _lentz_cf returned 0.5046−0.0254i here — a stale
+    # early iterate, silently flagged converged, ~40% wrong at EVERY precision.
+    truth = Complex{BigFloat}(BigFloat("0.78938047242565968"),
+                              BigFloat("0.12037823591796105"))
+    setprecision(Arb, 384) do
+        p = MSTParams(-2,2,2, Arb(7)/10, Complex{Arb}(Arb(0), Arb(16)))
+        ν = Complex{Arb}(Arb(49)/10, Arb(-35)/100)
+        L = Teukolsky.Ln_cf(p, ν, -1; nmax=4000)
+        @test _relC(L, truth) < 1e-15
+        # Arb path must agree with the (always-correct) BigFloat generic path
+        # across the former failure region.
+        for σ in (13.5, 16.0, 20.0)
+            pA = MSTParams(-2,2,2, Arb(7)/10, Complex{Arb}(Arb(0), Arb(σ)))
+            LA = Teukolsky.Ln_cf(pA, ν, -1; nmax=4000)
+            LB = setprecision(BigFloat, 384) do
+                pB = MSTParams(-2,2,2, BigFloat(7)/10, Complex{BigFloat}(0, BigFloat(σ)))
+                Teukolsky.Ln_cf(pB, Complex{BigFloat}(BigFloat(49)/10, BigFloat(-35)/100),
+                                -1; nmax=4000)
+            end
+            @test _relC(LA, LB) < 1e-100
+        end
+    end
+end
 
 @testset "Arb Rup via rigorous acb_hypgeom_u" begin
     nmax = 60
@@ -36,7 +98,7 @@ const _relC = (A, g) -> Float64(abs(Complex{BigFloat}(A) - Complex{BigFloat}(g))
             ra = Rup(p, ν, fg, Arb(10); nmax=nmax, ctrans=ct)
             @testset "Rup s=$s l=$l σ=$σ" begin
                 @test isfinite(_relC(ra, ra))
-                @test _relC(ra, ref_rup) < 1e-30     # ≥40 digits where old seed gave garbage
+                @test _relC(ra, ref_rup) < 1e-30
             end
         end
     end

@@ -108,6 +108,7 @@ function _lentz_cf(a, b, ::Type{Complex{Arb}}; tol, maxiter::Int)
     T       = Complex{Arb}
     tiny    = T(eps(Arb)^2)
     one_arb = one(Arb)
+    sqrt_tol = sqrt(tol)       # conditioning-floor gate for the stall exit
     f = tiny; C = f; D = zero(T)
     best_f = f
     best_d = Arb(Inf)
@@ -126,11 +127,20 @@ function _lentz_cf(a, b, ::Type{Complex{Arb}}; tol, maxiter::Int)
         # so |Δ−1| descends to a floor and plateaus.  Stop there instead of
         # churning every iteration to the cap; the point arithmetic keeps the
         # midpoint stable, so the best iterate IS the most accurate value.
+        #
+        # The plateau exit is gated on best_d < √tol: the backward (Ln) CF at
+        # ω = iσ, σ ≳ 13 has a NON-MONOTONIC |Δ−1| transient longer than 24
+        # iterations BEFORE genuine convergence begins, and the ungated exit
+        # returned a stale O(1)-wrong early iterate as "converged" (silently —
+        # relΔ ≈ 0.4 at every precision).  A genuine conditioning floor sits
+        # below half the working precision; an oscillatory transient sits at
+        # O(0.01–1) and must NOT be accepted.  Shallower plateaus now run to
+        # maxiter and return (best_f, false) so Rn_cf/Ln_cf warn honestly.
         if d < best_d
             best_d = d; best_f = f; stalls = 0
         else
             stalls += 1
-            stalls ≥ 24 && return best_f, true
+            stalls ≥ 24 && best_d < sqrt_tol && return best_f, true
         end
     end
     return best_f, false
