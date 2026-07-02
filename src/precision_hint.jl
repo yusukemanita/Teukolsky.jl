@@ -41,10 +41,15 @@ const MST_F64X4_TRUST = 3.5
 
 Predict the working-precision backend, mantissa bit-count, and series truncation
 `nmax` for ONE MST solve at frequency `ω`.  `backend` is `:multifloat`
-(Float64x4, `bits==212`) for `|ω| ≤ MST_F64X4_TRUST`, else `:bigfloat` at the
-predicted bit-count snapped up to [`_MST_BIT_LADDER`](@ref).  `l` bumps `nmax`
-(higher multipoles need a few more terms); `margin` (>1 widens, <1 tightens)
-scales the predicted bits before snapping.
+(Float64x4, `bits==212`) for `|ω| ≤ MST_F64X4_TRUST`, else `:acb` — the native
+in-place Acb chain (`compute_mst_core_acb`, or equivalently `compute_mst_core`
+on `Arb` inputs inside `setprecision(Arb, bits)`) at the predicted bit-count
+snapped up to [`_MST_BIT_LADDER`](@ref).  The `:acb` chain is value-equivalent
+to BigFloat at the same bits (verified bit-identical on the branch-cut chain)
+and 2.8–7.6× faster end-to-end (σ = 4.3–10); consumers that cannot run Arb can
+substitute BigFloat at the same `bits` with identical accuracy, only slower.
+`l` bumps `nmax` (higher multipoles need a few more terms); `margin` (>1
+widens, <1 tightens) scales the predicted bits before snapping.
 
 This is calibrated for the spin-`s=-2` branch-cut integrand (see file header) and
 is intended as the START of a verify-and-escalate ladder — pair it with a
@@ -75,5 +80,5 @@ function suggest_mst_precision(ω; l::Int=2, margin::Real=1.0)
             break
         end
     end
-    return (backend = :bigfloat, bits = max(bits, 256), nmax = nmax)
+    return (backend = :acb, bits = max(bits, 256), nmax = nmax)
 end
