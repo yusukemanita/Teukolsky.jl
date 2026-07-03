@@ -39,11 +39,9 @@ function _cshalf_deriv(cz::R, sz::R, p::Int, q::Int, deriv::Int) where {R}
     end
 end
 
-function sYlm(s::Int, l::Int, m::Int, θ; φ=0, deriv::Int=0)
+# θ-only (real) part of the Goldberg sum: pref · Σ_r …, in the precision of θ.
+function _sYlm_theta(s::Int, l::Int, m::Int, θ, deriv::Int)
     R = typeof(float(real(θ)))
-    (l < abs(s) || abs(m) > l) && return zero(Complex{R})
-    deriv in (0, 1, 2) || throw(ArgumentError("deriv must be 0, 1, or 2"))
-
     fac(n) = R(factorial(big(n)))
     pref = R((-1)^m) * sqrt(fac(l+m) * fac(l-m) * R(2l+1) /
                             (4 * R(π) * fac(l+s) * fac(l-s)))
@@ -59,7 +57,33 @@ function sYlm(s::Int, l::Int, m::Int, θ; φ=0, deriv::Int=0)
                  R(binomial(big(l + s), big(r + s - m))) *
                  R((-1)^(l - r - s)) * _cshalf_deriv(cz, sz, ce, se, deriv)
     end
-    return Complex{R}(pref * total) * cis(R(m) * R(φ))
+    return pref * total
+end
+
+# The alternating Goldberg sum loses ≈ 1.05·l bits to cancellation (measured:
+# 22 bits at l=20, 104 at l=100, 154 at l=150 — worst over θ, s, m grids), so a
+# direct Float64 evaluation degrades from ~5e-13 rel. error at l=12 to O(1)
+# garbage at l=60 and factorial-overflow NaN beyond l≈120.  Above this threshold
+# Float64/Float32/Float16 inputs are evaluated internally in BigFloat with
+# l + 64 guard bits over the target precision (covers the cancellation up to
+# l ≈ 1200) and rounded back.  Measured direct-path worst generic-point rel.
+# error at l = 8 is 4.7e-13; the promoted path is ≤ ~1e-15 for all l tested
+# (≤ 150).  BigFloat/Arb inputs keep the exact type-generic path unchanged.
+const _SYLM_DIRECT_LMAX = 8
+
+function sYlm(s::Int, l::Int, m::Int, θ; φ=0, deriv::Int=0)
+    R = typeof(float(real(θ)))
+    (l < abs(s) || abs(m) > l) && return zero(Complex{R})
+    deriv in (0, 1, 2) || throw(ArgumentError("deriv must be 0, 1, or 2"))
+
+    y = if R <: Union{Float16, Float32, Float64} && l > _SYLM_DIRECT_LMAX
+        setprecision(BigFloat, l + 64 + precision(R)) do
+            R(_sYlm_theta(s, l, m, BigFloat(R(θ)), deriv))
+        end
+    else
+        _sYlm_theta(s, l, m, θ, deriv)
+    end
+    return Complex{R}(y) * cis(R(m) * R(φ))
 end
 
 """
@@ -69,27 +93,29 @@ Angular separation constant λ = A_lm of the spin-weighted spheroidal equation
 with oblateness `γ = aω` (a thin alias for [`compute_lambda`](@ref) taking γ
 directly, matching the Mathematica `SpinWeightedSpheroidalEigenvalue` signature).
 """
-SpinWeightedSpheroidalEigenvalue(s::Int, l::Int, m::Int, γ; l_max::Int=20) =
+SpinWeightedSpheroidalEigenvalue(s::Int, l::Int, m::Int, γ; l_max::Int=0) =
     compute_lambda(s, l, m, one(real(typeof(float(real(complex(γ)))))), γ; l_max=l_max)
 
 """
-    swsh_coefficients(s, l, m, a, ω; l_max=20) -> (ells, C)
+    swsh_coefficients(s, l, m, a, ω; l_max=0) -> (ells, C)
 
 Spherical-harmonic expansion coefficients of S_{slm}: `S = Σ C[i]·ₛY_{ells[i],m}`.
 Unit 2-norm, phase-fixed so the ℓ′=ℓ term is real positive.
+`l_max ≤ 0` (default) sizes the ℓ′ basis adaptively (see [`compute_lambda`](@ref)).
 """
-swsh_coefficients(s::Int, l::Int, m::Int, a, ω; l_max::Int=20) =
+swsh_coefficients(s::Int, l::Int, m::Int, a, ω; l_max::Int=0) =
     (e = _swsh_eigen(s, l, m, a, ω; l_max=l_max); (e[2], e[3]))
 
 """
-    SpinWeightedSpheroidalHarmonicS(s, l, m, a, ω, θ; φ=0, deriv=0, l_max=20)
+    SpinWeightedSpheroidalHarmonicS(s, l, m, a, ω, θ; φ=0, deriv=0, l_max=0)
 
 Spin-weighted spheroidal harmonic S_{slm}(θ, φ) for oblateness aω, to working
 precision. `deriv` ∈ {0,1,2} returns the θ-derivative ∂^deriv S / ∂θ^deriv.
 (Pass BigFloat a/ω/θ for a BigFloat harmonic.)
+`l_max ≤ 0` (default) sizes the ℓ′ basis adaptively (see [`compute_lambda`](@ref)).
 """
 function SpinWeightedSpheroidalHarmonicS(s::Int, l::Int, m::Int, a, ω, θ;
-                                         φ=0, deriv::Int=0, l_max::Int=20)
+                                         φ=0, deriv::Int=0, l_max::Int=0)
     ells, C = swsh_coefficients(s, l, m, a, ω; l_max=l_max)
     R = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))),
                      typeof(float(real(θ))))

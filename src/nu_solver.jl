@@ -349,7 +349,7 @@ Solve for ν (renormalized angular momentum).
 function compute_nu(s::Int, l::Int, m::Int, a, ω;
                     nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
                     precision::Int=64, ν_init=nothing, method::String="Monodromy",
-                    backend::Symbol=:bigfloat)
+                    backend::Symbol=:bigfloat, l_max::Int=0)
     # ADDITIVE precision-type backends (opt-in): :float64 and :multifloat convert
     # the inputs to the chosen working float type and recurse through the generic
     # path (backend=:bigfloat + precision=64, so neither the :arb/:acb blocks nor
@@ -362,7 +362,7 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
             compute_nu(s, l, m, a_w, ω_w;
                        nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64,
                        ν_init = ν_init === nothing ? nothing : complex(ν_init),
-                       method=method, backend=:bigfloat)
+                       method=method, backend=:bigfloat, l_max=l_max)
         end
     end
     # ADDITIVE Arb backend (M1): opt-in via backend=:arb.  Must precede the
@@ -373,7 +373,7 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
         return setprecision(Arb, precision) do
             ωc = complex(ω)
             _compute_nu_monodromy(s, l, m, Arb(a),
-                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
+                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))); l_max=l_max)
         end
     end
     # ADDITIVE native-Acb in-place backend (M2): opt-in via backend=:acb.  Same
@@ -386,7 +386,7 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
         return setprecision(Arb, precision) do
             ωc = complex(ω)
             _compute_nu_monodromy_acb(s, l, m, Arb(a),
-                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))))
+                Complex{Arb}(Arb(real(ωc)), Arb(imag(ωc))); l_max=l_max)
         end
     end
     if precision > 64
@@ -394,14 +394,14 @@ function compute_nu(s::Int, l::Int, m::Int, a, ω;
             compute_nu(s, l, m, BigFloat(a), Complex{BigFloat}(complex(ω));
                        nmax_cf=nmax_cf, tol=tol, maxiter=maxiter, precision=64,
                        ν_init=ν_init === nothing ? nothing : Complex{BigFloat}(ν_init),
-                       method=method)
+                       method=method, l_max=l_max)
         end
     end
     if method == "Monodromy"
-        return _compute_nu_monodromy(s, l, m, a, ω)
+        return _compute_nu_monodromy(s, l, m, a, ω; l_max=l_max)
     else
         return _compute_nu_impl(s, l, m, a, ω; nmax_cf=nmax_cf, tol=tol,
-                                maxiter=maxiter, ν_init=ν_init)
+                                maxiter=maxiter, ν_init=ν_init, l_max=l_max)
     end
 end
 
@@ -419,8 +419,9 @@ used in the continued-fraction Newton solver.
 # midpoint-extracting overrides in arb_compat.jl.
 _strip_radius(z::Complex) = z
 
-function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60)
-    p    = MSTParams(s, l, m, a, ω)
+function _compute_nu_monodromy(s::Int, l::Int, m::Int, a, ω; nmax_mono::Int=60,
+                               l_max::Int=0)
+    p    = MSTParams(s, l, m, a, ω; l_max=l_max)
     R    = typeof(real(p.ϵ))
     # Point-estimate the converged cos(2πν): at large |ω| its rigorous ball is
     # blown by cancellation, but its midpoint matches BigFloat — see _strip_radius.
@@ -460,8 +461,8 @@ end
 
 function _compute_nu_impl(s::Int, l::Int, m::Int, a, ω;
                            nmax_cf::Int=150, tol::Real=-1, maxiter::Int=200,
-                           ν_init=nothing)
-    p = MSTParams(s, l, m, a, ω)
+                           ν_init=nothing, l_max::Int=0)
+    p = MSTParams(s, l, m, a, ω; l_max=l_max)
     R = typeof(p.a)
 
     # Auto-scale tolerance and finite-difference step with precision
@@ -954,8 +955,8 @@ then the SAME branch-selection block (real / half-integer / integer / complex-ω
 Returns `(ν::Complex{Arb}, p::MSTParams{Arb})`, consistent with the M1 backend.
 """
 function _compute_nu_monodromy_acb(s::Int, l::Int, m::Int, a::Arb, ω::Complex{Arb};
-                                   nmax_mono::Int=60)
-    p    = MSTParams(s, l, m, a, ω)         # R = Arb; p.λ::Complex{Arb}
+                                   nmax_mono::Int=60, l_max::Int=0)
+    p    = MSTParams(s, l, m, a, ω; l_max=l_max)  # R = Arb; p.λ::Complex{Arb}
     R    = typeof(real(p.ϵ))                # === Arb
     c2pn = _strip_radius(_monodromy_adaptive_acb(s, l, m, a, ω, p.λ;
                                    prec=precision(Arb), nmax0=nmax_mono))
