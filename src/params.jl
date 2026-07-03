@@ -181,7 +181,12 @@ end
 # and always large enough that the λ truncation floor sits below 2^-prec of the
 # working type.  `l_max ≤ 0` (the default) means "automatic only".
 function _swsh_lmax_auto(R::Type, l::Int, cabs::Real, l_max::Int)
-    prec = round(Int, -log2(Float64(eps(R))))
+    # NB: not plain `round(Int, -log2(Float64(eps(R))))` — Float64(eps(R))
+    # underflows to 0.0 above 1074 bits (Arb/BigFloat), turning prec into
+    # round(Int, Inf) and crashing every MSTParams construction at the
+    # 1280/1536-bit ladder rungs `suggest_mst_precision` picks for |ω| ≳ 15.
+    e = Float64(eps(R))
+    prec = e > 0 ? round(Int, -log2(e)) : precision(R)
     auto = l + ceil(Int, Float64(cabs)) + _swsh_lmax_margin(prec, cabs)
     return max(l_max, auto, 20)
 end

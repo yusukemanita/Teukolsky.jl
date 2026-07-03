@@ -117,7 +117,7 @@ end
     for (a, ω) in ((0.7, 1.0), (0.9, 1.5))
         ν, p = compute_nu(-2, 2, 2, a, ω)
         fn = compute_fn(p, ν; nmax = 40)
-        Am_new = compute_Aminus(p, ν, fn; nmax = 40)
+        Am_new = compute_Aminus(p, ν, fn; nmax = 40, nmin = -40)
         Am_ref = Aminus_direct(p, ν, fn; nmax = 40)
         @test abs(Am_new - Am_ref) / abs(Am_ref) < 1e-12
     end
@@ -126,7 +126,7 @@ end
         ω = Complex{BigFloat}(0, BigFloat(43) / 10)
         ν, p = compute_nu(-2, 2, 2, BigFloat(7) / 10, ω)
         fn = compute_fn(p, ν; nmax = 60)
-        Am_new = compute_Aminus(p, ν, fn; nmax = 60)
+        Am_new = compute_Aminus(p, ν, fn; nmax = 60, nmin = -60)
         Am_ref = Aminus_direct(p, ν, fn; nmax = 60)
         @test Float64(abs(Am_new - Am_ref) / abs(Am_ref)) < 1e-70
         # Kν uses the same weights in its denominator: full-value check against

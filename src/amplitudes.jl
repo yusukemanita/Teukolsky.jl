@@ -2,34 +2,80 @@
 #  Asymptotic amplitudes A^ν_±, Eqs. (157)-(158)
 # ============================================================
 
-function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
+# A^ν_+ prefactor, shared by the exact-window and adaptive paths.
+function _Aplus_prefactor(p::MSTParams, ν)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
-
     # π at FULL working precision.  The old `exp(π*im*(ν+1-s)/2)` evaluated
     # `π*im` FIRST, promoting π through Complex{Bool} to Float64 — a silent
     # 1.2e-16 relative error in the prefactor phase at EVERY precision
     # (BigFloat/Arb included).  Found by the native-Acb prefactor arbiter.
     πT = real(T)(π)
-    prefactor = exp(-πT*ϵ/2) * exp(im*πT*(ν+1-s)/2) *
-                T(2)^(-1+s-im*ϵ) *
-                _cgamma(ν + 1 - s + im*ϵ) / _cgamma(ν + 1 + s - im*ϵ)
-
-    Σ = sum(fn[n] for n in nmin:nmax)
-
-    return prefactor * Σ
+    return exp(-πT*ϵ/2) * exp(im*πT*(ν+1-s)/2) *
+           T(2)^(-1+s-im*ϵ) *
+           _cgamma(ν + 1 - s + im*ϵ) / _cgamma(ν + 1 + s - im*ϵ)
 end
 
-function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
+# Exact-window A^ν_+ over n = nmin:nmax — the arbiter primitive (generic vs
+# native kernels must agree on IDENTICAL windows; see test_native_acb.jl).
+# Production callers use the adaptive converge-or-error `compute_Aplus`.
+function _Aplus_window(p::MSTParams, ν, fn, nmin::Int, nmax::Int)
+    Σ = sum(fn[n] for n in nmin:nmax)
+    return _Aplus_prefactor(p, ν) * Σ
+end
+
+"""
+    compute_Aplus(p, ν, fn; nmax=80, tol=100·eps, nmax_hard=50_000,
+                  floor_tol=√eps, nmin=nothing)
+
+Asymptotic amplitude A^ν_+ = prefactor · Σ_n f_n (Sasaki-Tagoshi Eq. 157).
+
+Converge-or-error (same contract as [`Rin`](@ref)/[`Rup`](@ref)): `nmax` is
+only the initial window hint — the sum runs until two consecutive terms pass
+`tol`, adaptively extending `fn` (the dict is mutated) up to `nmax_hard`, and
+is certified against the cancellation floor.  The old fixed ±nmax window
+silently truncated on the positive imaginary axis (measured at s=-2 l=m=2
+a=0.7 with the `suggest_mst_precision` settings: 1.3e-38 at ω=4.3i up to
+5.0e-07 at ω=16i — far above the working-precision floor).
+
+Passing `nmin` explicitly selects the legacy EXACT window `nmin:nmax`
+(no extension, no certification) — the generic-vs-native arbiter path.
+"""
+function compute_Aplus(p::MSTParams, ν, fn; nmax::Int=80,
+                       tol::Real=100*eps(real(typeof(p.ϵ))),
+                       nmax_hard::Int=50_000,
+                       floor_tol::Real=_default_floor_tol(real(typeof(p.ϵ))),
+                       nmin::Union{Nothing,Int}=nothing)
+    nmin === nothing || return _Aplus_window(p, ν, fn, nmin, nmax)
+    T = typeof(p.ϵ)
+    one_T = one(T)
+    n_ext = max(2 * nmax, 64)
+    res_up, smax_up = _sum_mst_series!(n -> one_T, fn, p, ν, +1,
+                                       tol, zero(tol), n_ext, nmax_hard, "A+")
+    res_dn, smax_dn = _sum_mst_series!(n -> one_T, fn, p, ν, -1,
+                                       tol, zero(tol), n_ext, nmax_hard, "A+")
+    ctol = max(tol, floor_tol)
+    Σ = _certify_mst_sum(res_up + res_dn, max(smax_up, smax_dn),
+                         ctol, zero(ctol), "A+")
+    return _Aplus_prefactor(p, ν) * Σ
+end
+
+# A^ν_- prefactor, shared by the exact-window and adaptive paths.
+function _Aminus_prefactor(p::MSTParams, ν)
     s, ϵ = p.s, p.ϵ
     T = typeof(ϵ)
-
-    # Full-precision π — see compute_Aplus (the old `-π*im*…` truncated π to
-    # Float64 via Complex{Bool} promotion, a 1.2e-16 phase error at all precisions).
+    # Full-precision π — see _Aplus_prefactor.
     πT = real(T)(π)
-    prefactor = T(2)^(-1-s+im*ϵ) *
-                exp(-im*πT*(ν+1+s)/2) *
-                exp(-πT*ϵ/2)
+    return T(2)^(-1-s+im*ϵ) *
+           exp(-im*πT*(ν+1+s)/2) *
+           exp(-πT*ϵ/2)
+end
+
+# Exact-window A^ν_- over n = nmin:nmax — arbiter primitive (see _Aplus_window).
+function _Aminus_window(p::MSTParams, ν, fn, nmin::Int, nmax::Int)
+    s, ϵ = p.s, p.ϵ
+    T = typeof(ϵ)
+    prefactor = _Aminus_prefactor(p, ν)
 
     # Weights w(n) = (-1)^n (aw)_n/(bw)_n built by the incremental ratios
     #   w(n) = -w(n-1)·(aw+n-1)/(bw+n-1)   (ascending),
@@ -65,6 +111,46 @@ function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     )
 
     return prefactor * Σ
+end
+
+"""
+    compute_Aminus(p, ν, fn; nmax=80, tol=100·eps, nmax_hard=50_000,
+                   floor_tol=√eps, nmin=nothing)
+
+Asymptotic amplitude A^ν_- = prefactor · Σ_n (-1)^n (aw)_n/(bw)_n · f_n
+(Sasaki-Tagoshi Eq. 158), with the Pochhammer-ratio weight marched
+incrementally (see `_Aminus_window` for the ratio derivation).
+
+Converge-or-error, same contract as [`compute_Aplus`](@ref).  The fixed
+±nmax window was the WORST silent truncation on the positive imaginary
+axis: the weight grows polynomially like n^(2|ϵ|+2s) there (−2iϵ is real
+positive), pushing the weighted peak far beyond fn's own decay — measured
+1.1e-33 (ω=4.3i) up to 2.6e-20 (ω=16i) at the `suggest_mst_precision`
+settings, and this error enters EVERY `Rup`/`q̃` value through Ctrans.
+
+Passing `nmin` explicitly selects the legacy EXACT window `nmin:nmax`
+(no extension, no certification) — the generic-vs-native arbiter path.
+"""
+function compute_Aminus(p::MSTParams, ν, fn; nmax::Int=80,
+                        tol::Real=100*eps(real(typeof(p.ϵ))),
+                        nmax_hard::Int=50_000,
+                        floor_tol::Real=_default_floor_tol(real(typeof(p.ϵ))),
+                        nmin::Union{Nothing,Int}=nothing)
+    nmin === nothing || return _Aminus_window(p, ν, fn, nmin, nmax)
+    s, ϵ = p.s, p.ϵ
+    aw = ν + 1 + s - im*ϵ
+    bw = ν + 1 - s + im*ϵ
+    n_ext = max(2 * nmax, 64)
+    w_up = _fup_weight_stepper(aw, bw, +1)
+    res_up, smax_up = _sum_mst_series!(w_up, fn, p, ν, +1,
+                                       tol, zero(tol), n_ext, nmax_hard, "A-")
+    w_dn = _fup_weight_stepper(aw, bw, -1)
+    res_dn, smax_dn = _sum_mst_series!(w_dn, fn, p, ν, -1,
+                                       tol, zero(tol), n_ext, nmax_hard, "A-")
+    ctol = max(tol, floor_tol)
+    Σ = _certify_mst_sum(res_up + res_dn, max(smax_up, smax_dn),
+                         ctol, zero(ctol), "A-")
+    return _Aminus_prefactor(p, ν) * Σ
 end
 
 # Rup / amplitude normalization constant (Sasaki-Tagoshi; MST.m UpTrans)

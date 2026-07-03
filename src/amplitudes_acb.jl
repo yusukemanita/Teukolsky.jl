@@ -62,18 +62,55 @@ function _Aplus_pref_acb!(res::Acb, p, ν, prec::Int)
     return res
 end
 
-# Internal A^ν_+ over a dense Acb vector fv (fv[n + off] = f_n).  Returns a
-# fresh Acb.  Any nmin ≤ nmax; fv must cover nmin:nmax at offset `off`.
+# Float64 midpoint magnitude of an Acb — the decidable-guard convention
+# (huge exponents saturate to Inf/0, which the callers treat conservatively).
+@inline _mag_acb_f64(t::Acb) =
+    abs(complex(Float64(Arblib.midref(Arblib.realref(t))),
+                Float64(Arblib.midref(Arblib.imagref(t)))))
+
+# Tail-criterion ratio for the window-adequacy check: q = |t|·2^tailbits/|acc|
+# decided on the Float64 MIDPOINT of the Arb ratio (ratio-first — |t|/|acc|
+# alone spans hundreds of digits at 1280 bits and would over/underflow
+# Float64; after the 2^tailbits shift the decision boundary sits at q = 1, so
+# Float64 saturation to Inf/0 still decides correctly).  Non-finite → not ok.
+function _tail_q_acb(t::Acb, absacc::Arb, tailbits::Int, prec::Int)
+    r = Arb(0)
+    Arblib.abs!(r, t)
+    Arblib.mul_2exp!(r, r, tailbits)
+    Arblib.div!(r, r, absacc; prec=prec)
+    return _mid_f64(r)
+end
+
+# Internal A^ν_+ over a dense Acb vector fv (fv[n + off] = f_n).  Any
+# nmin ≤ nmax; fv must cover nmin:nmax at offset `off`.  Returns
+# `(val::Acb, tail_ok::Bool, cancel::Float64)`:
+#   tail_ok — the last two terms of BOTH legs satisfy |term| < 2^-tailbits·|Σ|
+#             (the converge-or-error window-adequacy criterion; for A⁺ the
+#             terms are the f_n themselves).  `tailbits ≤ 0` skips the check
+#             (exact-window contract of the public wrapper) and reports true.
+#   cancel  — max|partial| / |Σ| from Float64 midpoints (the cancellation
+#             floor scale for _certify_mst_sum-style certification).
 function _Aplus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
-                    prec::Int)
+                    prec::Int; tailbits::Int=-1)
     pref = Acb(0)
     _Aplus_pref_acb!(pref, p, ν, prec)
     acc = Acb(0)
+    smax = 0.0
     for n in nmin:nmax
         Arblib.add!(acc, acc, fv[n + off]; prec=prec)
+        smax = max(smax, _mag_acb_f64(acc), _mag_acb_f64(fv[n + off]))
+    end
+    tail_ok = true
+    cancel = smax / _mag_acb_f64(acc)
+    if tailbits > 0
+        absacc = Arb(0)
+        Arblib.abs!(absacc, acc)
+        for k in (nmax, max(nmax - 1, nmin), nmin, min(nmin + 1, nmax))
+            tail_ok &= _tail_q_acb(fv[k + off], absacc, tailbits, prec) < 1.0
+        end
     end
     Arblib.mul!(pref, pref, acc; prec=prec)
-    return pref
+    return pref, tail_ok, cancel
 end
 
 """
@@ -87,7 +124,8 @@ built natively in Acb (acb_hypgeom_gamma).  `fn` is the Complex{Arb} dict from
 function compute_Aplus_acb(p, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     prec = precision(Arb)
     fv = _fn_vec_from_dict(fn, nmin, nmax, prec)
-    return Complex{Arb}(_Aplus_acb(p, ν, fv, 1 - nmin, nmin, nmax, prec))
+    val, _, _ = _Aplus_acb(p, ν, fv, 1 - nmin, nmin, nmax, prec)
+    return Complex{Arb}(val)
 end
 
 # --- A^ν_- prefactor + Pochhammer bases, natively in Acb -------------------
@@ -127,12 +165,16 @@ end
 # n0 = clamp(0, nmin, nmax) in both directions (one Acb mul + div per term),
 # exactly mirroring the generic compute_Aminus (amplitudes.jl).  Honors the
 # FULL nmin:nmax range (any nmin ≤ nmax, including nmin < -nmax and nmin > 0);
-# fv must cover nmin:nmax at offset `off`.  Returns a fresh Acb.
+# fv must cover nmin:nmax at offset `off`.  Returns
+# `(val::Acb, tail_ok::Bool, cancel::Float64)` — see _Aplus_acb; here the
+# boundary terms are w(n)·f_n, reconstructed after each leg from the final
+# marched weight (one extra mul/div per leg, no per-iteration cost).
 function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
-                     prec::Int)
+                     prec::Int; tailbits::Int=-1)
     pref = Acb(0); ainA = Acb(0); binA = Acb(0)
     _Aminus_pref_acb!(pref, ainA, binA, p, ν, prec)
     acc = Acb(0); tmp = Acb(0); tmp2 = Acb(0); term = Acb(0)
+    smax = 0.0
 
     # anchor n0 = clamp(0, nmin, nmax):  P0 = (ain)_{n0} / (bin)_{n0}
     #   n0 > 0:  ∏_{k=0}^{n0-1} (ain+k)/(bin+k)
@@ -156,6 +198,7 @@ function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
     Arblib.mul!(term, P0, fv[n0 + off]; prec=prec)
     isodd(n0) ? Arblib.sub!(acc, acc, term; prec=prec) :
                 Arblib.add!(acc, acc, term; prec=prec)
+    smax = max(smax, _mag_acb_f64(term), _mag_acb_f64(acc))
 
     # forward n = n0+1..nmax:  P(n) = P(n-1)·(ain+n-1)/(bin+n-1)
     Rf = Acb(0)
@@ -168,6 +211,22 @@ function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
         Arblib.mul!(term, Rf, fv[n + off]; prec=prec)
         isodd(n) ? Arblib.sub!(acc, acc, term; prec=prec) :
                    Arblib.add!(acc, acc, term; prec=prec)
+        smax = max(smax, _mag_acb_f64(term), _mag_acb_f64(acc))
+    end
+    # boundary terms of the forward leg: w(nmax)·f_nmax is still in `term`;
+    # step Rf back once for w(nmax-1)·f_{nmax-1}
+    tU1 = Acb(0); tU2 = Acb(0)
+    if tailbits > 0 && nmax > n0
+        Arblib.set!(tU1, term)
+        if nmax - 1 > n0
+            Arblib.add!(tmp,  binA, nmax - 1; prec=prec)
+            Arblib.add!(tmp2, ainA, nmax - 1; prec=prec)
+            Arblib.div!(tmp, tmp, tmp2; prec=prec)
+            Arblib.mul!(tmp, tmp, Rf; prec=prec)
+            Arblib.mul!(tU2, tmp, fv[nmax - 1 + off]; prec=prec)
+        else
+            Arblib.set!(tU2, tU1)
+        end
     end
 
     # backward n = n0-1..nmin:  P(n) = P(n+1)·(bin+n)/(ain+n)
@@ -181,10 +240,35 @@ function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
         Arblib.mul!(term, Rb, fv[n + off]; prec=prec)
         isodd(n) ? Arblib.sub!(acc, acc, term; prec=prec) :
                    Arblib.add!(acc, acc, term; prec=prec)
+        smax = max(smax, _mag_acb_f64(term), _mag_acb_f64(acc))
+    end
+
+    tail_ok = true
+    cancel = smax / _mag_acb_f64(acc)
+    if tailbits > 0
+        absacc = Arb(0)
+        Arblib.abs!(absacc, acc)
+        if nmax > n0
+            tail_ok &= _tail_q_acb(tU1, absacc, tailbits, prec) < 1.0
+            tail_ok &= _tail_q_acb(tU2, absacc, tailbits, prec) < 1.0
+        end
+        if nmin < n0
+            # w(nmin)·f_nmin is still in `term`; step Rb forward once for
+            # w(nmin+1)·f_{nmin+1}
+            tail_ok &= _tail_q_acb(term, absacc, tailbits, prec) < 1.0
+            if nmin + 1 < n0
+                Arblib.add!(tmp,  ainA, nmin; prec=prec)
+                Arblib.add!(tmp2, binA, nmin; prec=prec)
+                Arblib.div!(tmp, tmp, tmp2; prec=prec)
+                Arblib.mul!(tmp, tmp, Rb; prec=prec)
+                Arblib.mul!(tmp, tmp, fv[nmin + 1 + off]; prec=prec)
+                tail_ok &= _tail_q_acb(tmp, absacc, tailbits, prec) < 1.0
+            end
+        end
     end
 
     Arblib.mul!(pref, pref, acc; prec=prec)
-    return pref
+    return pref, tail_ok, cancel
 end
 
 """
@@ -202,5 +286,6 @@ nmin < -nmax and nmin > 0).
 function compute_Aminus_acb(p, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     prec = precision(Arb)
     fv = _fn_vec_from_dict(fn, nmin, nmax, prec)
-    return Complex{Arb}(_Aminus_acb(p, ν, fv, 1 - nmin, nmin, nmax, prec))
+    val, _, _ = _Aminus_acb(p, ν, fv, 1 - nmin, nmin, nmax, prec)
+    return Complex{Arb}(val)
 end
