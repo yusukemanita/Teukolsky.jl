@@ -202,6 +202,25 @@ function pochhammer(z::PNSeries{T}, n::Int) where {T}
     end
 end
 
+# ψ^{(m)}(z₀) for the lnΓ base-point expansion.  The generic method uses
+# SpecialFunctions; Complex{BigFloat} — the package-default coefficient type —
+# has NO SpecialFunctions digamma/polygamma method, so route it through Arb's
+# acb_polygamma at the current BigFloat working precision (+10 guard bits),
+# following the codebase's _cgamma Acb-bridge pattern.  ψ^{(0)} = digamma.
+_polygamma_base(m::Int, z0) = m == 0 ? digamma(z0) : polygamma(m, z0)
+function _polygamma_base(m::Int, z0::Complex{BigFloat})
+    p   = precision(BigFloat) + 10
+    res = Acb(0; prec=p)
+    z   = Acb(real(z0), imag(z0); prec=p)
+    if m == 0
+        Arblib.digamma!(res, z; prec=p)
+    else
+        Arblib.polygamma!(res, Acb(m; prec=p), z; prec=p)
+    end
+    return Complex{BigFloat}(BigFloat(Arblib.realref(res)),
+                             BigFloat(Arblib.imagref(res)))
+end
+
 # ln Γ(z) expanded about z₀ = constant term:
 #   lnΓ(z₀+δ) = lnΓ(z₀) + Σ_{k≥1} ψ^{(k-1)}(z₀) δ^k / k!
 function _lngamma_series(z::PNSeries{T}) where {T}
@@ -213,7 +232,7 @@ function _lngamma_series(z::PNSeries{T}) where {T}
     for k in 1:z.order
         fact *= k
         term  = term * δ
-        ψ = k == 1 ? digamma(z0) : polygamma(k - 1, z0)
+        ψ = _polygamma_base(k - 1, z0)
         acc = acc + (ψ / fact) * term
     end
     acc

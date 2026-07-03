@@ -63,7 +63,7 @@ function _Aplus_pref_acb!(res::Acb, p, ν, prec::Int)
 end
 
 # Internal A^ν_+ over a dense Acb vector fv (fv[n + off] = f_n).  Returns a
-# fresh Acb.  Assumes nmin ≤ 0 ≤ nmax and fv covers nmin:nmax at offset `off`.
+# fresh Acb.  Any nmin ≤ nmax; fv must cover nmin:nmax at offset `off`.
 function _Aplus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
                     prec::Int)
     pref = Acb(0)
@@ -123,20 +123,44 @@ function _Aminus_pref_acb!(res::Acb, ain::Acb, bin::Acb, p, ν, prec::Int)
 end
 
 # Internal A^ν_- over a dense Acb vector fv (fv[n + off] = f_n).  The weight
-# w(n) = (-1)^n (ain)_n/(bin)_n is marched incrementally from the n=0 anchor in
-# both directions (one Acb mul + div per term).  Returns a fresh Acb.
+# w(n) = (-1)^n (ain)_n/(bin)_n is marched incrementally from the anchor
+# n0 = clamp(0, nmin, nmax) in both directions (one Acb mul + div per term),
+# exactly mirroring the generic compute_Aminus (amplitudes.jl).  Honors the
+# FULL nmin:nmax range (any nmin ≤ nmax, including nmin < -nmax and nmin > 0);
+# fv must cover nmin:nmax at offset `off`.  Returns a fresh Acb.
 function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
                      prec::Int)
     pref = Acb(0); ainA = Acb(0); binA = Acb(0)
     _Aminus_pref_acb!(pref, ainA, binA, p, ν, prec)
     acc = Acb(0); tmp = Acb(0); tmp2 = Acb(0); term = Acb(0)
 
-    # n = 0 term: (+1)·P(0)=1·f_0
-    Arblib.add!(acc, acc, fv[off]; prec=prec)
+    # anchor n0 = clamp(0, nmin, nmax):  P0 = (ain)_{n0} / (bin)_{n0}
+    #   n0 > 0:  ∏_{k=0}^{n0-1} (ain+k)/(bin+k)
+    #   n0 < 0:  ∏_{k=1}^{-n0}  (bin−k)/(ain−k)   ((z)_{-j} = 1/∏(z−k))
+    n0 = clamp(0, nmin, nmax)
+    P0 = Acb(1)
+    for k in 0:n0-1
+        Arblib.add!(tmp,  ainA, k; prec=prec)
+        Arblib.add!(tmp2, binA, k; prec=prec)
+        Arblib.div!(tmp, tmp, tmp2; prec=prec)
+        Arblib.mul!(P0, P0, tmp; prec=prec)
+    end
+    for k in 1:-n0
+        Arblib.sub!(tmp,  binA, k; prec=prec)
+        Arblib.sub!(tmp2, ainA, k; prec=prec)
+        Arblib.div!(tmp, tmp, tmp2; prec=prec)
+        Arblib.mul!(P0, P0, tmp; prec=prec)
+    end
 
-    # forward n = 1..nmax:  P(n) = P(n-1)·(ain+n-1)/(bin+n-1)
-    Rf = Acb(1)
-    for n in 1:nmax
+    # anchor term: (-1)^{n0} P(n0) f_{n0}
+    Arblib.mul!(term, P0, fv[n0 + off]; prec=prec)
+    isodd(n0) ? Arblib.sub!(acc, acc, term; prec=prec) :
+                Arblib.add!(acc, acc, term; prec=prec)
+
+    # forward n = n0+1..nmax:  P(n) = P(n-1)·(ain+n-1)/(bin+n-1)
+    Rf = Acb(0)
+    Arblib.set!(Rf, P0)
+    for n in n0+1:nmax
         Arblib.add!(tmp,  ainA, n - 1; prec=prec)
         Arblib.add!(tmp2, binA, n - 1; prec=prec)
         Arblib.div!(tmp, tmp, tmp2; prec=prec)
@@ -146,9 +170,10 @@ function _Aminus_acb(p, ν, fv::Vector{Acb}, off::Int, nmin::Int, nmax::Int,
                    Arblib.add!(acc, acc, term; prec=prec)
     end
 
-    # backward n = -1..nmin:  P(n) = P(n+1)·(bin+n)/(ain+n)
-    Rb = Acb(1)
-    for n in -1:-1:max(nmin, -nmax)
+    # backward n = n0-1..nmin:  P(n) = P(n+1)·(bin+n)/(ain+n)
+    Rb = Acb(0)
+    Arblib.set!(Rb, P0)
+    for n in n0-1:-1:nmin
         Arblib.add!(tmp,  binA, n; prec=prec)
         Arblib.add!(tmp2, ainA, n; prec=prec)
         Arblib.div!(tmp, tmp, tmp2; prec=prec)
@@ -165,10 +190,14 @@ end
 """
     compute_Aminus_acb(p, ν, fn; nmax=80, nmin=-nmax) -> Complex{Arb}
 
-Native-Acb A^ν_- = prefactor · Σ_n (-1)^n P(n) f_n, with the Pochhammer ratio
-P(n) = (ν+1+s-iε)_n / (ν+1-s+iε)_n marched incrementally, and
+Native-Acb A^ν_- = prefactor · Σ_{n=nmin}^{nmax} (-1)^n P(n) f_n, with the
+Pochhammer ratio P(n) = (ν+1+s-iε)_n / (ν+1-s+iε)_n marched incrementally from
+the anchor n₀ = clamp(0, nmin, nmax), and
 prefactor = 2^{-1-s+iε} e^{-iπ(ν+1+s)/2} e^{-πε/2} built natively in Acb.
-`fn` is the Complex{Arb} dict, converted once to a dense Acb vector.
+`fn` is the Complex{Arb} dict, converted once to a dense Acb vector; it must
+contain every n in nmin:nmax.  The FULL documented (nmin, nmax) range is
+summed, exactly like the generic `compute_Aminus` (any nmin ≤ nmax, including
+nmin < -nmax and nmin > 0).
 """
 function compute_Aminus_acb(p, ν, fn; nmax::Int=80, nmin::Int=-nmax)
     prec = precision(Arb)

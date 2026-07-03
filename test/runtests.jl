@@ -261,3 +261,9 @@ include("test_monodromy_depth.jl")
 # grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
 # and end-to-end Rup/dRup vs an independent-π direct-sum reference.
 include("test_hu_evaluation.jl")
+
+# Guard/contract regressions T11–T14: compute_Aminus_acb full (nmin,nmax)
+# contract, compute_fn_acb tol semantics at the near-integer-ν gate,
+# gamma_ratio for Complex{BigFloat}, green_function real-axis/ω≠0 contract,
+# Integer(::MultiFloat) InexactError semantics.
+include("test_guards_t11_t14.jl")
