@@ -250,7 +250,11 @@ end
         p = MSTParams(-2, 2, 2, Arb(7)/10, Complex{Arb}(Arb(10), Arb(0)))
         ν = Complex{Arb}(Arb(1.7), Arb(0.9))
         fn = compute_fn(p, ν; nmax=50)
-        ct = TK._ctrans(p, TK.compute_Aminus(p, ν, fn; nmax=50))
+        # exact-window A− (nmin passed): at real ω=10 / 256 bits the A− sum
+        # cancels ~1e39, so the adaptive path correctly REFUSES to certify
+        # √eps here — but ct divides both rv and rref identically below, so
+        # its floor-limited accuracy cancels out of the comparison.
+        ct = TK._ctrans(p, TK.compute_Aminus(p, ν, fn; nmax=50, nmin=-50))
         rv = Rup(p, ν, fn, Arb(10); nmax=50, ctrans=ct, tol=0)
         rref, κr = _rup_reference(p, ν, fn, ct, 10, 50, 256)
         er = _relerr(_tobig(rv), rref)

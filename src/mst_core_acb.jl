@@ -45,11 +45,45 @@ function compute_mst_core_acb(s::Int, l::Int, m::Int, a, ω;
         # directly (no Dict → Acb round-trip); the public Dict is built once
         # for the returned NamedTuple (fn::Dict is the Rup/qtilde contract).
         prec = precision   # the working precision (kwarg) = precision(Arb) here
-        fv = _compute_fn_acb_vec(p, νv; nmax=nmax, nmax_cf=nmax_cf)
-        fn = _fn_dict_from_vec(fv, nmax)
-        off = nmax + 1
-        Ap = Complex{Arb}(_Aplus_acb(p, νv, fv, off, -nmax, nmax, prec))
-        Am = Complex{Arb}(_Aminus_acb(p, νv, fv, off, -nmax, nmax, prec))
+
+        # Converge-or-error A± window (same doctrine as the generic
+        # compute_Aplus/compute_Aminus): the fixed ±nmax window silently
+        # truncated the weighted sums on the positive imaginary axis
+        # (measured 1.1e-33 at ω=4.3i up to 2.6e-20 at ω=16i at the
+        # `suggest_mst_precision` settings — this error enters every Rup/q̃
+        # through A±/Ctrans).  Grow the dense fₙ vector until the last two
+        # weighted terms of BOTH legs of BOTH sums sit 2^-tailbits below the
+        # sums (tailbits ≈ the tol=100·eps criterion), then certify the
+        # cancellation floor at √eps like _certify_mst_sum.
+        tailbits = prec - 7
+        nmax_hard = 50_000
+        cur = nmax
+        local fv, ApA, AmA
+        while true
+            fv = _compute_fn_acb_vec(p, νv; nmax=cur, nmax_cf=nmax_cf)
+            off = cur + 1
+            ApA, okp, cp = _Aplus_acb(p, νv, fv, off, -cur, cur, prec;
+                                      tailbits=tailbits)
+            AmA, okm, cm = _Aminus_acb(p, νv, fv, off, -cur, cur, prec;
+                                       tailbits=tailbits)
+            if okp && okm
+                cmax = max(cp, cm)
+                if !(isfinite(cmax) && log2(cmax) <= prec / 2)
+                    error("compute_mst_core_acb: A± converged termwise but " *
+                          "the cancellation floor eps·max|partial| exceeds " *
+                          "√eps·|A±| (max|partial|/|Σ| ≈ $(cmax)); raise the " *
+                          "working precision.")
+                end
+                break
+            end
+            cur >= nmax_hard && error("compute_mst_core_acb: A± window not " *
+                                      "converged by nmax = $nmax_hard; " *
+                                      "increase precision or nmax_hard.")
+            cur = min(2 * cur, nmax_hard)
+        end
+        fn = _fn_dict_from_vec(fv, cur)
+        Ap = Complex{Arb}(ApA)
+        Am = Complex{Arb}(AmA)
         return (p=p, ν=νv, fn=fn, Ap=Ap, Am=Am)
     end
 end

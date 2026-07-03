@@ -305,3 +305,10 @@ include("test_flux_pi_precision.jl")
 # gamma_ratio for Complex{BigFloat}, green_function real-axis/ω≠0 contract,
 # Integer(::MultiFloat) InexactError semantics.
 include("test_guards_t11_t14.jl")
+
+# Converge-or-error regressions for the R^up leg (issue R1b): Rup/dRup series
+# window-independence on the PIA (old: 13%–100% silent errors at small r +
+# large |ϵ|), A± adaptive windows (old: 1e-33…1e-20 silent truncation entering
+# every Rup/q̃ through Ctrans), native-core window growth, and the >1074-bit
+# _swsh_lmax_auto crash.
+include("test_rup_apm_convergence.jl")

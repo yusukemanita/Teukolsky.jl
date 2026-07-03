@@ -36,8 +36,8 @@ const _relC = (A, g) -> Float64(abs(Complex{BigFloat}(A) - Complex{BigFloat}(g))
                 @test Set(keys(fa)) == Set(keys(fg))
                 @test maximum(_relC(fa[n], fg[n]) for n in -nmax:nmax) < 1e-70
             end
-            Apg = Teukolsky.compute_Aplus(p, ν, fg; nmax=nmax)
-            Amg = Teukolsky.compute_Aminus(p, ν, fg; nmax=nmax)
+            Apg = Teukolsky.compute_Aplus(p, ν, fg; nmax=nmax, nmin=-nmax)
+            Amg = Teukolsky.compute_Aminus(p, ν, fg; nmax=nmax, nmin=-nmax)
             Apa = Teukolsky.compute_Aplus_acb(p, ν, fa; nmax=nmax)
             Ama = Teukolsky.compute_Aminus_acb(p, ν, fa; nmax=nmax)
             @testset "A± s=$s l=$l σ=$σ" begin
@@ -66,8 +66,8 @@ end
             fa = Teukolsky.compute_fn_acb(p, ν; nmax=nmax)
             Apa = Teukolsky.compute_Aplus_acb(p, ν, fa; nmax=nmax)
             Ama = Teukolsky.compute_Aminus_acb(p, ν, fa; nmax=nmax)
-            Apg = Teukolsky.compute_Aplus(p, ν, fa; nmax=nmax)
-            Amg = Teukolsky.compute_Aminus(p, ν, fa; nmax=nmax)
+            Apg = Teukolsky.compute_Aplus(p, ν, fa; nmax=nmax, nmin=-nmax)
+            Amg = Teukolsky.compute_Aminus(p, ν, fa; nmax=nmax, nmin=-nmax)
             Apr, Amr = setprecision(BigFloat, prec + 128) do
                 C  = Complex{BigFloat}
                 πb = BigFloat(π)
@@ -115,8 +115,8 @@ end
             p = MSTParams(-2, 2, 2, Arb(7)/10, Complex{Arb}(Arb(0), Arb(σ)))
             ν = Complex{Arb}(Arb(real(ν0)), Arb(imag(ν0)))
             fg = compute_fn(p, ν; nmax=nmax)
-            Apg = Teukolsky.compute_Aplus(p, ν, fg; nmax=nmax)
-            Amg = Teukolsky.compute_Aminus(p, ν, fg; nmax=nmax)
+            Apg = Teukolsky.compute_Aplus(p, ν, fg; nmax=nmax, nmin=-nmax)
+            Amg = Teukolsky.compute_Aminus(p, ν, fg; nmax=nmax, nmin=-nmax)
             Apa = Teukolsky.compute_Aplus_acb(p, ν, fg; nmax=nmax)
             Ama = Teukolsky.compute_Aminus_acb(p, ν, fg; nmax=nmax)
             @testset "A± σ=$σ bits=$bits ν≈$(ComplexF64(ν0))" begin
@@ -145,9 +145,14 @@ end
                                                         BigFloat(imag(ν))),
                                     nmax=nmax, precision=bits)
         @test core.fn isa Dict{Int,Complex{Arb}}
-        @test Set(keys(core.fn)) == Set(-nmax:nmax)
-        Apd = Teukolsky.compute_Aplus_acb(core.p, core.ν, core.fn; nmax=nmax)
-        Amd = Teukolsky.compute_Aminus_acb(core.p, core.ν, core.fn; nmax=nmax)
+        # The core's A± window is converge-or-error (grows from the `nmax`
+        # hint until the weighted tails pass the tol criterion), so wiring
+        # parity is checked at the FINAL window the dict came out with.
+        wmax = maximum(keys(core.fn))
+        @test wmax >= nmax
+        @test Set(keys(core.fn)) == Set(-wmax:wmax)
+        Apd = Teukolsky.compute_Aplus_acb(core.p, core.ν, core.fn; nmax=wmax)
+        Amd = Teukolsky.compute_Aminus_acb(core.p, core.ν, core.fn; nmax=wmax)
         @test iszero(_relC(core.Ap, Apd))
         @test iszero(_relC(core.Am, Amd))
     end
