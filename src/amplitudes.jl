@@ -168,7 +168,8 @@ and `:acb` are equivalent). Default `:auto` leaves the inputs untouched.
 function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
                             nmax::Int=80, nmax_cf::Int=150, ν_init=nothing,
                             method::String="Monodromy",
-                            backend::Symbol=:auto, precision::Int=256)
+                            backend::Symbol=:auto, precision::Int=256,
+                            l_max::Int=0)
     # ADDITIVE precision-backend dispatch: backend ∈ {:float64,:bigfloat,:multifloat}
     # converts the inputs to the chosen working float type and recurses through the
     # generic (type-driven) path.  Default :auto leaves the inputs untouched, so
@@ -177,10 +178,11 @@ function compute_amplitudes(s::Int, l::Int, m::Int, a, ω;
         return _with_backend(backend, precision, a, ω) do a_w, ω_w
             compute_amplitudes(s, l, m, a_w, ω_w; nmax=nmax, nmax_cf=nmax_cf,
                 ν_init = ν_init === nothing ? nothing : complex(ν_init),
-                method=method, backend=:auto)
+                method=method, backend=:auto, l_max=l_max)
         end
     end
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init, method=method)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, ν_init=ν_init, method=method,
+                      l_max=l_max)
 
     # εp = (ε+τ)/2 = 0 at the superradiance boundary ω = mΩH.
     # There the transmission amplitude Btrans → 0 and Binc, Bref are not well-defined.
@@ -238,14 +240,15 @@ Same as `compute_amplitudes` but with ν fixed (no ν solver).
 """
 function compute_amplitudes_nufixed(s::Int, l::Int, m::Int, a, ω,
                                      ν_fixed; nmax::Int=80,
-                                     backend::Symbol=:auto, precision::Int=256)
+                                     backend::Symbol=:auto, precision::Int=256,
+                                     l_max::Int=0)
     if backend !== :auto
         return _with_backend(backend, precision, a, ω) do a_w, ω_w
             compute_amplitudes_nufixed(s, l, m, a_w, ω_w, ν_fixed;
-                                       nmax=nmax, backend=:auto)
+                                       nmax=nmax, backend=:auto, l_max=l_max)
         end
     end
-    p = MSTParams(s, l, m, a, ω)
+    p = MSTParams(s, l, m, a, ω; l_max=l_max)
     R = typeof(p.a)
     # Step off exact integer/half-integer ν (removable Γ-pole). δ=√eps balances
     # the O(δ) bias against the O(eps/δ) near-pole cancellation and, crucially,
@@ -369,14 +372,16 @@ Meromorphic mode: amplitudes with branch-cut factors removed.
 """
 function compute_amplitudes_mero(s::Int, l::Int, m::Int, a, ω;
                                   nmax::Int=80, nmax_cf::Int=150, method::String="Monodromy",
-                                  backend::Symbol=:auto, precision::Int=256)
+                                  backend::Symbol=:auto, precision::Int=256,
+                                  l_max::Int=0)
     if backend !== :auto
         return _with_backend(backend, precision, a, ω) do a_w, ω_w
             compute_amplitudes_mero(s, l, m, a_w, ω_w;
-                nmax=nmax, nmax_cf=nmax_cf, method=method, backend=:auto)
+                nmax=nmax, nmax_cf=nmax_cf, method=method, backend=:auto,
+                l_max=l_max)
         end
     end
-    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, method=method)
+    ν, p = compute_nu(s, l, m, a, ω; nmax_cf=nmax_cf, method=method, l_max=l_max)
 
     if abs(p.ϵp) ≤ 100 * eps(typeof(real(p.ϵp)))
         @warn "compute_amplitudes_mero: εp = 0 (ω = mΩH). Returning NaN for amplitude fields."
@@ -423,14 +428,15 @@ Meromorphic mode with ν fixed.
 """
 function compute_amplitudes_nufixed_mero(s::Int, l::Int, m::Int, a, ω,
                                           ν_fixed; nmax::Int=80,
-                                          backend::Symbol=:auto, precision::Int=256)
+                                          backend::Symbol=:auto, precision::Int=256,
+                                          l_max::Int=0)
     if backend !== :auto
         return _with_backend(backend, precision, a, ω) do a_w, ω_w
             compute_amplitudes_nufixed_mero(s, l, m, a_w, ω_w, ν_fixed;
-                                            nmax=nmax, backend=:auto)
+                                            nmax=nmax, backend=:auto, l_max=l_max)
         end
     end
-    p = MSTParams(s, l, m, a, ω)
+    p = MSTParams(s, l, m, a, ω; l_max=l_max)
     R = typeof(p.a)
     # Step off exact integer/half-integer ν (removable Γ-pole). δ=√eps balances
     # the O(δ) bias against the O(eps/δ) near-pole cancellation and, crucially,

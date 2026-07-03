@@ -261,3 +261,16 @@ include("test_monodromy_depth.jl")
 # grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
 # and end-to-end Rup/dRup vs an independent-π direct-sum reference.
 include("test_hu_evaluation.jl")
+
+# Adaptive angular basis (A4+A5): l>l_max BoundsError, l==l_max zero-buffer
+# truncation, calibrated l_max margin (floor < 2^-prec), one-λ threading,
+# and the branch-walk ambiguity diagnostics (A6-edge).
+include("test_lmax_adequacy.jl")
+
+# sYlm high-l stability (A8): promoted-precision Goldberg sum vs BigFloat-512,
+# uniform bound, orthonormality, unchanged type-generic paths.
+include("test_sylm_stability.jl")
+
+# Full-precision π in the s=-2 fluxes (A7b): BigFloat-256 vs exact-π rebuild,
+# Float64 parity, and a source sweep for Float64-π literals.
+include("test_flux_pi_precision.jl")

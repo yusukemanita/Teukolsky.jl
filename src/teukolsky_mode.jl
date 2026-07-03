@@ -107,11 +107,14 @@ function _fluxes_s2(l, m, a, ω, λ, ZInf, ZHor)
     Ωh = a / (2rh)
     κ  = ω - m*Ωh
     ϵ  = sqrt(1 - a^2) / (4rh)
-    FInf = abs2(ZInf) / (4π * ω^2)                         # ω^{2(1-|s|)} = ω^{-2}
+    # π at FULL working precision: `4π` is a Float64 literal (typeof(4π) ==
+    # Float64), which floored BigFloat fluxes at ~3.9e-17 relative error.
+    fourπ = 4 * promote_type(typeof(float(abs2(ZInf))), typeof(float(real(ω))))(π)
+    FInf = abs2(ZInf) / (fourπ * ω^2)                      # ω^{2(1-|s|)} = ω^{-2}
     AbsCSq = ((λ+2)^2 + 4a*m*ω - 4a^2*ω^2) * (λ^2 + 36m*a*ω - 36a^2*ω^2) +
              (2λ+3) * (96a^2*ω^2 - 48m*a*ω) + 144*ω^2*(1 - a^2)
     α    = (256*(2rh)^5 * κ*(κ^2+4ϵ^2)*(κ^2+16ϵ^2)*ω^3) / AbsCSq
-    FHor = α * abs2(ZHor) / (4π * ω^2)
+    FHor = α * abs2(ZHor) / (fourπ * ω^2)
     return (Inf=FInf, Hor=FHor)
 end
 
