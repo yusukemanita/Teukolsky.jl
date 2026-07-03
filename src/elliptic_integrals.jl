@@ -28,6 +28,21 @@
 # truncation error ≈ eps^(6/5) ≪ eps, i.e. full working precision.
 @inline _carlson_tol(::Type{T}) where {T<:AbstractFloat} = eps(T)^(one(T) / 5)
 
+# --- iteration cap for the Carlson duplication ---
+# The duplication contracts the deviations by a factor 4 per step, so a
+# CONVERGENT input needs about (log2(dynamic range) + precision/5)/2 steps.
+# The cap below is far above that for the full exponent range of Float64 and
+# for any reasonable BigFloat input; it exists only so that DIVERGENT inputs
+# that slip past the explicit domain checks fail loudly instead of looping
+# forever (converge-or-error, never converge-by-exhaustion).
+@inline _carlson_maxiter(::Type{T}) where {T<:AbstractFloat} = 4 * precision(T) + 2000
+
+@noinline _carlson_noconv(name) = error(
+    "Carlson $name duplication did not converge within the iteration cap; " *
+    "the integral is divergent or the arguments are outside the supported domain")
+
+@noinline _carlson_domain(val, msg) = throw(DomainError(val, msg))
+
 # ------------------------------------------------------------
 #  Carlson R_C(x, y)
 # ------------------------------------------------------------
@@ -44,18 +59,25 @@ function rc(x, y)
 end
 
 function _rc(x::T, y::T) where {T<:AbstractFloat}
+    # Domain: x ≥ 0, y ≠ 0 (y < 0 → Cauchy principal value).
+    (isfinite(x) && isfinite(y)) || _carlson_domain((x, y), "R_C requires finite arguments")
+    x < 0 && _carlson_domain(x, "R_C requires x ≥ 0")
+    iszero(y) && _carlson_domain(y, "R_C(x, 0) is divergent")
     tol = _carlson_tol(T)
     if y > 0
         xt = x; yt = y; w = one(T)
     else
-        # y ≤ 0: Cauchy principal value via the standard shift.
+        # y < 0: Cauchy principal value via the standard shift.
         xt = x - y
         yt = -y
         w = sqrt(x) / sqrt(xt)
     end
     s = T(Inf)
     ave = one(T)
+    iters = 0
+    maxiter = _carlson_maxiter(T)
     while abs(s) > tol
+        (iters += 1) > maxiter && _carlson_noconv("R_C")
         lam = 2 * sqrt(xt) * sqrt(yt) + yt
         xt = (xt + lam) / 4
         yt = (yt + lam) / 4
@@ -81,9 +103,22 @@ function rf(x, y, z)
 end
 
 function _rf(x::T, y::T, z::T) where {T<:AbstractFloat}
+    # Domain: x, y, z ≥ 0 with at most ONE of them zero
+    # (two or more zeros ⇒ the integral diverges, e.g. R_F(0,0,1) = ∞,
+    #  which is exactly the EllipticK(m → 1) divergence).
+    (isfinite(x) && isfinite(y) && isfinite(z)) ||
+        _carlson_domain((x, y, z), "R_F requires finite arguments")
+    (x < 0 || y < 0 || z < 0) &&
+        _carlson_domain((x, y, z), "R_F requires nonnegative arguments")
+    (iszero(x) + iszero(y) + iszero(z)) > 1 &&
+        _carlson_domain((x, y, z),
+            "R_F is divergent when two or more arguments vanish (elliptic parameter m = 1)")
     tol = _carlson_tol(T)
     delx = T(Inf); dely = T(Inf); delz = T(Inf); ave = one(T)
+    iters = 0
+    maxiter = _carlson_maxiter(T)
     while max(abs(delx), abs(dely), abs(delz)) > tol
+        (iters += 1) > maxiter && _carlson_noconv("R_F")
         sx = sqrt(x); sy = sqrt(y); sz = sqrt(z)
         lam = sx * (sy + sz) + sy * sz
         x = (x + lam) / 4
@@ -115,11 +150,24 @@ function rd(x, y, z)
 end
 
 function _rd(x::T, y::T, z::T) where {T<:AbstractFloat}
+    # Domain: x, y ≥ 0 with at most one of them zero, and z > 0
+    # (z = 0 or x = y = 0 ⇒ the integral diverges).
+    (isfinite(x) && isfinite(y) && isfinite(z)) ||
+        _carlson_domain((x, y, z), "R_D requires finite arguments")
+    (x < 0 || y < 0 || z < 0) &&
+        _carlson_domain((x, y, z), "R_D requires nonnegative arguments")
+    iszero(z) && _carlson_domain(z, "R_D is divergent for z = 0")
+    (iszero(x) && iszero(y)) &&
+        _carlson_domain((x, y),
+            "R_D is divergent when x = y = 0 (elliptic parameter m = 1)")
     tol = _carlson_tol(T)
     sum = zero(T)
     fac = one(T)
     delx = T(Inf); dely = T(Inf); delz = T(Inf); ave = one(T)
+    iters = 0
+    maxiter = _carlson_maxiter(T)
     while max(abs(delx), abs(dely), abs(delz)) > tol
+        (iters += 1) > maxiter && _carlson_noconv("R_D")
         sx = sqrt(x); sy = sqrt(y); sz = sqrt(z)
         lam = sx * (sy + sz) + sy * sz
         sum += fac / (sz * (z + lam))
@@ -160,6 +208,16 @@ function rj(x, y, z, p)
 end
 
 function _rj(x::T, y::T, z::T, p::T) where {T<:AbstractFloat}
+    # Domain: x, y, z ≥ 0 with at most one of them zero, and p ≠ 0
+    # (p < 0 → Cauchy principal value).
+    (isfinite(x) && isfinite(y) && isfinite(z) && isfinite(p)) ||
+        _carlson_domain((x, y, z, p), "R_J requires finite arguments")
+    (x < 0 || y < 0 || z < 0) &&
+        _carlson_domain((x, y, z), "R_J requires nonnegative x, y, z")
+    iszero(p) && _carlson_domain(p, "R_J is divergent for p = 0")
+    (iszero(x) + iszero(y) + iszero(z)) > 1 &&
+        _carlson_domain((x, y, z),
+            "R_J is divergent when two or more of x, y, z vanish (elliptic parameter m = 1)")
     tol = _carlson_tol(T)
     if p > 0
         xt = x; yt = y; zt = z; pt = p
@@ -180,7 +238,10 @@ function _rj(x::T, y::T, z::T, p::T) where {T<:AbstractFloat}
     sum = zero(T)
     fac = one(T)
     delx = T(Inf); dely = T(Inf); delz = T(Inf); delp = T(Inf); ave = one(T)
+    iters = 0
+    maxiter = _carlson_maxiter(T)
     while max(abs(delx), abs(dely), abs(delz), abs(delp)) > tol
+        (iters += 1) > maxiter && _carlson_noconv("R_J")
         sx = sqrt(xt); sy = sqrt(yt); sz = sqrt(zt)
         lam = sx * (sy + sz) + sy * sz
         alpha = (pt * (sx + sy + sz) + sx * sy * sz)^2
@@ -221,10 +282,16 @@ end
     ellK(m)
 
 Complete elliptic integral of the first kind, `EllipticK[m]` (parameter `m=k²`).
+
+Real domain `m ≤ 1`.  At the logarithmic singularity `m = 1` the exact limiting
+value `K(1) = +∞` is returned (`Inf` of the working type); `m > 1` throws a
+`DomainError` (the value is complex there — Mathematica's `EllipticK[m>1]`).
 """
 function ellK(m)
     T = float(typeof(m))
     mm = T(m)
+    mm > 1 && _carlson_domain(mm, "ellK(m) requires m ≤ 1 on the real line (EllipticK is complex for m > 1)")
+    mm == 1 && return T(Inf)                # exact limit K(1) = +∞
     return _rf(zero(T), 1 - mm, one(T))
 end
 
@@ -232,10 +299,15 @@ end
     ellE(m)
 
 Complete elliptic integral of the second kind, `EllipticE[m]` (parameter `m=k²`).
+
+Real domain `m ≤ 1`; the endpoint value `E(1) = 1` (exact) is handled
+explicitly, and `m > 1` throws a `DomainError`.
 """
 function ellE(m)
     T = float(typeof(m))
     mm = T(m)
+    mm > 1 && _carlson_domain(mm, "ellE(m) requires m ≤ 1 on the real line (EllipticE is complex for m > 1)")
+    mm == 1 && return one(T)                # exact endpoint E(1) = 1
     return _rf(zero(T), 1 - mm, one(T)) - (mm / 3) * _rd(zero(T), 1 - mm, one(T))
 end
 
@@ -245,10 +317,16 @@ end
 Complete elliptic integral of the third kind, `EllipticPi[n, m]`
 (characteristic `n`, parameter `m=k²`):
 ``\\int_0^{\\pi/2} d\\theta\\,[(1-n\\sin^2\\theta)\\sqrt{1-m\\sin^2\\theta}]^{-1}``.
+
+Real domain `m ≤ 1`.  At the divergent points `m = 1` or `n = 1` the exact
+limiting value `+∞` is returned (`Inf` of the working type); `n > 1` yields the
+Cauchy principal value (as in Mathematica).
 """
 function ellPi(n, m)
     T = float(promote_type(typeof(n), typeof(m)))
     nn = T(n); mm = T(m)
+    mm > 1 && _carlson_domain(mm, "ellPi(n, m) requires m ≤ 1 on the real line")
+    (mm == 1 || nn == 1) && return T(Inf)   # exact limits Π(n,1) = Π(1,m) = +∞
     return _rf(zero(T), 1 - mm, one(T)) +
            (nn / 3) * _rj(zero(T), 1 - mm, one(T), 1 - nn)
 end
@@ -343,6 +421,12 @@ end
 
 # core AGM descending Landen: returns the amplitude am(u, m)
 function _jacobi_amplitude(u::T, m::T) where {T<:AbstractFloat}
+    # Documented domain m ∈ [0, 1).  At m = 1 the AGM degenerates (b = 0,
+    # c/a stays 1 forever) and the old maxiter exit silently returned π/2
+    # instead of the true amplitude gd(u); fail loudly instead.
+    (0 ≤ m < 1) || _carlson_domain(m,
+        "jacobi_am/jacobi_sn require the elliptic parameter m ∈ [0, 1)")
+    isfinite(u) || _carlson_domain(u, "jacobi_am/jacobi_sn require finite u")
     tol = eps(T)
     # Build the AGM sequences a_n, b_n, c_n.
     a = one(T)
@@ -351,9 +435,12 @@ function _jacobi_amplitude(u::T, m::T) where {T<:AbstractFloat}
     cs = T[c]
     as = T[a]
     n = 0
-    # iterate until c_n is negligible (quadratic AGM convergence)
+    # iterate until c_n is negligible (quadratic AGM convergence);
+    # the cap is pure defense — for m ∈ [0,1) the AGM always converges —
+    # and overrunning it is an ERROR, never a silent exit.
     maxiter = 8 * precision(T) + 64   # ample headroom for any precision
-    while abs(c) > tol * abs(a) && n < maxiter
+    while abs(c) > tol * abs(a)
+        n < maxiter || error("jacobi_am AGM did not converge (m = $m)")
         a2 = (a + b) / 2
         b2 = sqrt(a * b)
         c2 = (a - b) / 2

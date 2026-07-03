@@ -281,3 +281,8 @@ include("test_rdown.jl")
 # R14a: degenerate-input robustness (rel_accuracy_bits clamping in the
 # escalation seeds; NaN/Inf/huge-b propagation in hypergeometric_U).
 include("test_hypgeom_degenerate.jl")
+
+# Geodesic/elliptic bug-fix regressions: Carlson m=1 iteration cap +
+# domain handling (G2), polar-orbit φ (G3), working-precision π in the
+# trajectory (G7a), near-polar cancellation (G9), extremal-spin guard (G14b).
+include("test_geo_regressions.jl")

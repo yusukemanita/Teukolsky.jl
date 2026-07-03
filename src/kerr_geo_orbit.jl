@@ -55,18 +55,21 @@ struct KerrGeoOrbitFunction{R}
 end
 
 # ---- radial position r(q_r) ----
-@inline function _rofqr(o::KerrGeoOrbitFunction, qr)
+@inline function _rofqr(o::KerrGeoOrbitFunction{R}, qr) where {R}
     r1, r2, r3, r4 = o.radial_roots
-    sn = jacobi_sn(o.Kr / π * qr, o.kr)
+    sn = jacobi_sn(o.Kr / R(π) * qr, o.kr)
     sn2 = sn * sn
     return (r3 * (r1 - r2) * sn2 - r2 * (r1 - r3)) /
            ((r1 - r2) * sn2 - (r1 - r3))
 end
 
 # ---- z(q_θ) = cosθ ----
-@inline function _zofqz(o::KerrGeoOrbitFunction, qz)
+# NOTE: every π here is materialized as R(π) at working precision; the old
+# `(qz + π/2)` promoted Irrational/Int to a 53-bit Float64 constant and froze
+# BigFloat trajectories at ~3e-15 relative accuracy.
+@inline function _zofqz(o::KerrGeoOrbitFunction{R}, qz) where {R}
     _, zm = o.polar_roots
-    return zm * jacobi_sn(o.Kθ * 2 / π * (qz + π / 2), o.kθ)
+    return zm * jacobi_sn(o.Kθ * 2 / R(π) * (qz + R(π) / 2), o.kθ)
 end
 
 # ---- Δt_r(q_r) ----
@@ -75,7 +78,7 @@ function _trofqr(o::KerrGeoOrbitFunction{R}, qr) where {R}
     En = o.En; L = o.L; a = o.a
     kr = o.kr; rp = o.rp; rm = o.rm
     hr = o.hr; hp = o.hp; hm = o.hm
-    ψr = jacobi_am(o.Kr / π * qr, kr)
+    ψr = jacobi_am(o.Kr / R(π) * qr, kr)
     qrπ = qr / R(π)
     Phr = ellPi(hr, kr) * qrπ - ellPi(hr, ψr, kr)
     Php = ellPi(hp, kr) * qrπ - ellPi(hp, ψr, kr)
@@ -98,7 +101,7 @@ function _phirofqr(o::KerrGeoOrbitFunction{R}, qr) where {R}
     En = o.En; L = o.L; a = o.a
     kr = o.kr; rp = o.rp; rm = o.rm
     hp = o.hp; hm = o.hm
-    ψr = jacobi_am(o.Kr / π * qr, kr)
+    ψr = jacobi_am(o.Kr / R(π) * qr, kr)
     qrπ = qr / R(π)
     Php = ellPi(hp, kr) * qrπ - ellPi(hp, ψr, kr)
     Phm = ellPi(hm, kr) * qrπ - ellPi(hm, ψr, kr)
@@ -112,7 +115,7 @@ end
 function _tθofqz(o::KerrGeoOrbitFunction{R}, qz) where {R}
     zp, zm = o.polar_roots
     En = o.En; kθ = o.kθ
-    ψz = jacobi_am(o.Kθ * 2 / π * (qz + π / 2), kθ)
+    ψz = jacobi_am(o.Kθ * 2 / R(π) * (qz + R(π) / 2), kθ)
     return En * zp / (1 - En^2) *
            (ellE(kθ) * 2 * ((qz + R(π) / 2) / R(π)) - ellEinc(ψz, kθ))
 end
@@ -121,9 +124,33 @@ end
 function _phiθofqz(o::KerrGeoOrbitFunction{R}, qz) where {R}
     zp, zm = o.polar_roots
     L = o.L; kθ = o.kθ
-    ψz = jacobi_am(o.Kθ * 2 / π * (qz + π / 2), kθ)
+    if iszero(L)
+        # Polar orbit (x = 0, L = 0, zm = 1): the generic expression is a
+        # 0 · ∞ indeterminate — ellPi(zm² = 1, kθ) = ∞ while L = 0 — but its
+        # x → 0 limit is finite.  Reducing ψz = Nπ + ψ0 (|ψ0| ≤ π/2) via the
+        # quasi-periodicity Π(n, ψ+Nπ, m) = Π(n, ψ, m) + 2N Π(n, m) gives
+        #   Δφθ = -(L/zp) [(w - 2N) Π(zm², kθ) - Π(zm², ψ0, kθ)]
+        # and, as x → 0,  (L/zp) Π(zm², kθ) → π/2  while
+        # (L/zp) Π(zm², ψ0, kθ) → 0 for |ψ0| < π/2.  Hence exactly
+        #   Δφθ = -(π/2) w + π N ,
+        # a sawtooth whose π-jumps at the pole crossings are the geometric
+        # azimuth flip of a trajectory passing over a pole.  (Verified
+        # numerically: L·Π(zm²,kθ)/zp - π/2 ∝ x at 512-bit precision.)
+        #
+        # The crossings sit exactly at qz = jπ (where ψz = (2j+1)π/2), so we
+        # index the branch N directly from qz — stable against rounding of
+        # jacobi_am at the half-integer ties — and take the midpoint value at
+        # an exact crossing, which is the pointwise x → 0⁺ limit there (the
+        # sweep of π is centred on the crossing for every small x > 0).
+        s = qz / R(π)
+        j = floor(s)
+        N = s == j ? j + one(R) / 2 : j + 1
+        return -R(π) * s - R(π) / 2 + R(π) * N
+    end
+    ψz = jacobi_am(o.Kθ * 2 / R(π) * (qz + R(π) / 2), kθ)
+    w = 2 * ((qz + R(π) / 2) / R(π))
     return -(L / zp) *
-           (ellPi(zm^2, kθ) * 2 * ((qz + R(π) / 2) / R(π)) - ellPi(zm^2, ψz, kθ))
+           (ellPi(zm^2, kθ) * w - ellPi(zm^2, ψz, kθ))
 end
 
 # ------------------------------------------------------------

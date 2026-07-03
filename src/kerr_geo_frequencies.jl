@@ -71,11 +71,13 @@ function kerr_geo_polar_roots(a, p, e, x)
 end
 
 @inline function _polar_roots(R, a, x, En, L, Q)
-    zm = sqrt(1 - x^2)
+    zm = sqrt((1 - x) * (1 + x))           # √(1 - x²), exact-product form
     if iszero(x)
         zp = sqrt(Q)
     else
-        zp = sqrt(a^2 * (1 - En^2) + L^2 / (1 - zm^2))
+        # 1 - zm² = x² exactly; the old L²/(1 - zm²) recomputed 1 - (1 - x²)
+        # and lost all precision for |x| ≲ 1e-8 (NaN at |x| ≲ 1e-9).
+        zp = sqrt(a^2 * (1 - En^2) + (L / x)^2)
     end
     return (zp, zm)
 end
@@ -123,6 +125,16 @@ function kerr_geo_mino_frequencies(a, p, e, x)
     end
 
     # ---------- Kerr (a ≠ 0), generic Fujita–Hikida ----------
+    # The extremal limit a = ±1 is NOT admitted: the horizons degenerate
+    # (rout = rin = 1) and the Fujita–Hikida Υφr / Υtr closed forms contain
+    # 1/√(1-a²) times a difference of Π-terms that vanishes in the limit —
+    # a 0·∞ confluence, not a removable one-liner (the Π-terms must be
+    # re-expanded around the double root).  The generic expressions used to
+    # return Υt = Υφ = NaN silently; fail loudly instead.
+    abs(a) == 1 && throw(DomainError(a,
+        "kerr_geo_mino_frequencies: extremal spin |a| = 1 is not supported " *
+        "(degenerate horizons make the Fujita–Hikida closed forms 0·∞); " *
+        "use |a| < 1"))
     En = kerr_geo_energy(a, p, e, x)
     L  = kerr_geo_angular_momentum(a, p, e, x)
     Q  = kerr_geo_carter_constant(a, p, e, x)
@@ -175,7 +187,20 @@ function kerr_geo_mino_frequencies(a, p, e, x)
                            a^2 * ((-2 + r1) * r1 + (-2 + r2) * r2)))
         Υφθ = R(π) * sqrt(nin / din) / ellK(karg)
     else
-        Υφθ = L * ellPi(zm^2, kθ) / Kθ
+        n = zm^2
+        if n > max(kθ, one(R) / 2)
+            # NEAR-POLAR CONDITIONING: ellPi(n, kθ) internally forms
+            # 1 - n = 1 - (1 - x²), which cancels catastrophically as x → 0
+            # (Π(1,·) = ∞ once zm² rounds to 1, |x| ≲ 1e-8 in Float64).
+            # Use the complementary-characteristic identity
+            # (Byrd & Friedman 413.01, valid for m < n < 1)
+            #   Π(n, m) = K(m) + (π/2)·√(n/((1-n)(n-m))) - Π(m/n, m)
+            # with 1 - n = x² EXACT and L/|x| smooth (L ∝ x near the pole).
+            Υφθ = L * (one(R) - ellPi(kθ / n, kθ) / Kθ) +
+                  (L / abs(x)) * (R(π) / 2) * sqrt(n / (n - kθ)) / Kθ
+        else
+            Υφθ = L * ellPi(n, kθ) / Kθ
+        end
     end
 
     Υφ = Υφr + Υφθ
