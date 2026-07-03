@@ -299,3 +299,9 @@ include("test_sylm_stability.jl")
 # Full-precision π in the s=-2 fluxes (A7b): BigFloat-256 vs exact-π rebuild,
 # Float64 parity, and a source sweep for Float64-π literals.
 include("test_flux_pi_precision.jl")
+
+# Guard/contract regressions T11–T14: compute_Aminus_acb full (nmin,nmax)
+# contract, compute_fn_acb tol semantics at the near-integer-ν gate,
+# gamma_ratio for Complex{BigFloat}, green_function real-axis/ω≠0 contract,
+# Integer(::MultiFloat) InexactError semantics.
+include("test_guards_t11_t14.jl")
