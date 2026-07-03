@@ -20,17 +20,37 @@
 #    - prefac sign of ẑ exponent: e^{-iẑ}  (vs e^{+iẑ})
 # ============================================================
 
+# Rdown normalization constant (single source of truth, mirroring `_ctrans`
+# for Rup so the convention cannot drift between call sites):
+#   Dtrans = ω^{-1} A^ν_+ exp(-i(ε logε − (1−κ)/2 ε))
+_dtrans(p::MSTParams, Ap) =
+    Ap * p.ω^(-1) * exp(-im * (p.ϵ * log(p.ϵ) - (1 - p.κ) / 2 * p.ϵ))
+
 """
-    Rdown(p::MSTParams, ν, fn, r; nmax=80, tol=1e-14)
+    Rdown(p::MSTParams, ν, fn, r; nmax=80, tol=100·eps, nmax_hard=50_000,
+          floor_tol=√eps)
 
 Compute the downgoing radial Teukolsky solution at Boyer-Lindquist radius r.
 Rdown = R^ν_+ / norm, normalized so that at infinity:
-    Rdown ~ r^{-2s-1} e^{-iωr*}
-(pure ingoing wave at infinity).
+
+    Rdown ~ r^{-1} e^{-iωr*}
+
+(pure ingoing wave at infinity with unit amplitude; the ingoing solution of
+the spin-s Teukolsky equation falls off as r^{-1}, while it is the OUTgoing
+solution that falls off as r^{-1-2s} — cf. Sasaki-Tagoshi Eq. (21)).
 
 norm = A^ν_+ · ω^{-1} · exp(-i(ε ln ε - (1-κ)/2 · ε))
+
+The HU[n] = (2iẑ)^n U(n+ν+1-s+iε, 2n+2ν+2, 2iẑ) values are produced by the
+same certified evaluator machinery as `Rup` (`_hu_dhu_evaluators`: certified
+escalated seeds + stable outward march for the Arb/BigFloat backends, legacy
+exact-seeded recurrence with a decidable guard otherwise), and the series is
+summed converge-or-error (adaptive fn extension, hard error past
+`nmax_hard`) exactly like `Rin`.
 """
-function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))))
+function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typeof(p.ϵ))),
+               nmax_hard::Int=50_000,
+               floor_tol::Real=_default_floor_tol(real(typeof(p.ϵ))))
     ϵ, κ, τ, s = p.ϵ, p.κ, p.τ, p.s
     rm = p.rm
     zhat = complex(ϵ * (r - rm) / 2)
@@ -48,65 +68,29 @@ function Rdown(p::MSTParams, ν, fn, r; nmax::Int=80, tol::Real=100*eps(real(typ
              exp(-im*zhat) * zhat^(ν + im*ϵp) *
              (zhat - ϵ*κ)^(-s - im*ϵp)
 
-    # HU cache with recurrence + fallback
-    hu_cache = Dict{Int, typeof(p.ϵ)}()
-
-    function get_hu(n::Int)
-        haskey(hu_cache, n) && return hu_cache[n]
-        if n == 0 || n == 1
-            val = hu_exact(hp, n)
-        elseif n >= 2
-            t1, t2 = hu_up(hp, n, get_hu(n-2), get_hu(n-1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        else
-            t1, t2 = hu_down(hp, n, get_hu(n+2), get_hu(n+1))
-            val = t1 + t2
-            if iszero(val) || max(abs(t1/val), abs(t2/val)) > 2.0
-                val = hu_exact(hp, n)
-            end
-        end
-        hu_cache[n] = val
-        return val
-    end
+    # HU evaluator: certified seeds + stable outward march for the Arb/BigFloat
+    # backends, legacy exact-seeded recurrence + decidable ratio guard
+    # otherwise — the same wiring as Rup (see hypergeometric.jl, "Certified
+    # HU / dHU evaluation").
+    get_hu, _ = _hu_dhu_evaluators(hp)
 
     # Series coefficient: just fn
     # (the i^n from the image formula is already absorbed into
     #  hu_exact via c^n = (2iẑ)^n = i^n (2ẑ)^n)
-    function fplus(n::Int)
-        fn_n = get(fn, n, zero(typeof(p.ϵ)))
-        return fn_n
-    end
+    term(n::Int) = prefac * get_hu(n)
 
-    # Sum bidirectionally
-    result = zero(typeof(p.ϵ))
-    for n in 0:nmax
-        fp = fplus(n)
-        iszero(fp) && continue
-        term = prefac * fp * get_hu(n)
-        result += term
-        n > 0 && abs(term) < tol * abs(result) + tol && break
-    end
+    # Sum bidirectionally, converge-or-error (see _sum_mst_series!).
+    n_ext = max(2 * nmax, 64)
+    result, smax_up = _sum_mst_series!(term, fn, p, ν, +1, tol, tol,
+                                       n_ext, nmax_hard, "Rdown")
+    res_down, smax_dn = _sum_mst_series!(term, fn, p, ν, -1, tol, tol,
+                                         n_ext, nmax_hard, "Rdown")
 
-    res_down = zero(typeof(p.ϵ))
-    for n in -1:-1:-nmax
-        fp = fplus(n)
-        iszero(fp) && continue
-        term = prefac * fp * get_hu(n)
-        res_down += term
-        abs(term) < tol * abs(res_down) + tol && break
-    end
+    ctol = max(tol, floor_tol)
+    Rnu_plus = _certify_mst_sum(result + res_down, max(smax_up, smax_dn),
+                                ctol, ctol, "Rdown")
 
-    Rnu_plus = result + res_down
-
-    # Normalization: Rdown = R^ν_+ / norm
-    # norm = A^ν_+ · ω^{-1} · exp(-i(ε ln ε - (1-κ)/2 · ε))
+    # Normalization: Rdown = R^ν_+ / Dtrans (shared helper _dtrans above)
     Ap = compute_Aplus(p, ν, fn; nmax=nmax)
-    ω_c = p.ω
-    phase = exp(-im * (ϵ * log(ϵ) - (1 - κ) / 2 * ϵ))
-    norm_val = Ap * ω_c^(-1) * phase
-
-    return Rnu_plus / norm_val
+    return Rnu_plus / _dtrans(p, Ap)
 end
