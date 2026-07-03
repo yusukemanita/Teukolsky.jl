@@ -73,15 +73,6 @@ Rup(p, ν, fn, 10.0)                            # upgoing solution (Rdown: third
 dRin(p, ν, fn, 10.0); dRup(p, ν, fn, 10.0)     # r-derivatives
 ```
 
-### Arbitrary precision
-
-```julia
-setprecision(BigFloat, 256) do
-    tr = TeukolskyRadial(-2, 2, 2, big"0.9", big"0.5")
-    tr.In(big"10.0")    # full BigFloat-accurate radial value
-end
-```
-
 ### Branch-cut coefficients and the shared MST core
 
 For Green's-function / branch-cut work (ω on the positive imaginary axis), one
