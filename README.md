@@ -103,11 +103,14 @@ One-call versions solve the core internally and return `(q, ν, p, Ap, Am)` /
 `(qtilde, ν, p, Ap, Am)`:
 
 ```julia
-setprecision(BigFloat, 320) do
-    compute_q(-2, 2, 2, big"0.7", im*big"4.3")        # q(ω):  branch-cut strength of R^up
-    compute_qtilde(-2, 2, 2, big"0.7", im*big"4.3")   # q̃(ω):  branch-cut strength of R^down
+setprecision(Arb, 320) do
+    compute_q(-2, 2, 2, Arb(7)/10, im*Arb(43)/10)        # q(ω):  branch-cut strength of R^up
+    compute_qtilde(-2, 2, 2, Arb(7)/10, im*Arb(43)/10)   # q̃(ω):  branch-cut strength of R^down
 end
 ```
+
+(Arb inputs route these through the native `:acb` chain too; `big"…"` inputs also
+work but run the slower BigFloat path.)
 
 ### Selectable precision backends
 
