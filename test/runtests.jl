@@ -261,3 +261,8 @@ include("test_monodromy_depth.jl")
 # grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
 # and end-to-end Rup/dRup vs an independent-π direct-sum reference.
 include("test_hu_evaluation.jl")
+
+# Geodesic/elliptic bug-fix regressions: Carlson m=1 iteration cap +
+# domain handling (G2), polar-orbit φ (G3), working-precision π in the
+# trajectory (G7a), near-polar cancellation (G9), extremal-spin guard (G14b).
+include("test_geo_regressions.jl")
