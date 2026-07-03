@@ -58,10 +58,17 @@ using Teukolsky
         ν, p = compute_nu(s, l, m, a, ω)
         fn = compute_fn(p, ν)
 
-        for r in [3.0, 5.0, 10.0, 50.0]
+        for r in [3.0, 5.0, 10.0]
             val = Rin(p, ν, fn, r)
             @test isfinite(val)
         end
+        # r=50 in Float64 sits beyond the certified cancellation floor (the
+        # 2F1 term peak exceeds the final sum by ≫ 1/√eps): Rin now raises an
+        # honest error instead of returning the old silently-unconverged value
+        # (issue R1; see test_radial_convergence.jl), and the value IS
+        # recoverable by explicitly accepting a looser tolerance.
+        @test_throws ErrorException Rin(p, ν, fn, 50.0)
+        @test isfinite(Rin(p, ν, fn, 50.0; tol=1e-3))
     end
 
     @testset "dRin — basic evaluation" begin
@@ -261,3 +268,16 @@ include("test_monodromy_depth.jl")
 # grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
 # and end-to-end Rup/dRup vs an independent-π direct-sum reference.
 include("test_hu_evaluation.jl")
+
+# R1/R6: Rin/dRin converge-or-error (adaptive fn extension + cancellation-floor
+# certification; the horizon 2F1 terms peak at n ≈ 2.3|x| and the tail cancels
+# the peak) and the decidable Arb recurrence-instability guards.
+include("test_radial_convergence.jl")
+
+# R10: Rdown — certified-HU wiring, r^{-1} e^{-iωr*} asymptotics (power law +
+# unit ingoing amplitude), 2×-precision value arbiter, ODE-residual arbiter.
+include("test_rdown.jl")
+
+# R14a: degenerate-input robustness (rel_accuracy_bits clamping in the
+# escalation seeds; NaN/Inf/huge-b propagation in hypergeometric_U).
+include("test_hypgeom_degenerate.jl")

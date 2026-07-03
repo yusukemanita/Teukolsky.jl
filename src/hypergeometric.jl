@@ -117,10 +117,18 @@ function hypergeometric_U(a, b, z)
         # Asymptotic not accurate enough — fall through to the convergent Kummer form.
     end
 
+    # Non-finite parameters: propagate NaN instead of crashing (issue R14a —
+    # round(Int, real(b)) throws InexactError for NaN/Inf b, and huge finite
+    # real(b) would overflow Int; U with a non-finite parameter is undefined).
+    if !(isfinite(complex(a)) && isfinite(complex(b)) && isfinite(complex(z)))
+        return complex(R(NaN), R(NaN))
+    end
+
     # Kummer relation for moderate/small |z|
     # For near-integer b, add a small (precision-scaled) perturbation off the Γ pole.
+    # `round(real(b))` (float round, not Int) stays exact for arbitrarily large b.
     b_pert = b
-    b_int = round(Int, real(b))
+    b_int = round(real(b))
     if abs(b - b_int) < sqrt(eps(R))
         b_pert = b + sqrt(eps(R)) * im
     end
@@ -460,6 +468,38 @@ _mid_f64(x) = Float64(x)
 _mid_c64(z::Complex) = complex(_mid_f64(real(z)), _mid_f64(imag(z)))
 _mag_f64(z::Complex) = abs(_mid_c64(z))
 
+# ── Decidable recurrence-instability guard (issue R6) ────────────────────────
+# The old per-step guard `iszero(val) || max(abs(t1/val),abs(t2/val)) > 2.0`
+# is UNDECIDABLE on Complex{Arb} balls: Arb's `>` is certainly-greater, so an
+# uncertain comparison returns `false` and the exact-recompute fallback can
+# NEVER fire once ball radii grow (verified: Arb(10±100) > 2.0 === false).
+# Same bug class as the pre-certified HU guard.  Decide on the Float64
+# MIDPOINT of the working-precision ratios t/val instead — the ratios are
+# O(1) near the trip point, so the Float64 cast cannot over/underflow there —
+# and be conservative on degenerate values: a non-finite or exactly-zero
+# `val`, or a non-finite ratio midpoint (Arb division by a ball containing
+# zero yields NaN midpoints), always trips the guard.
+#
+# `_RECUR_GUARD_TRIP_COUNT` is a test hook (not thread-safe) so regression
+# tests can assert the fallback actually fires on the Arb backend.
+const _RECUR_GUARD_TRIP_COUNT = Ref{Int}(0)
+
+@inline function _recur_guard_trips(val, terms...)
+    ok = isfinite(real(val)) && isfinite(imag(val)) && !iszero(val)
+    if ok
+        for t in terms
+            r = _mag_f64(t / val)
+            if !(isfinite(r) && r <= 2.0)
+                ok = false
+                break
+            end
+        end
+    end
+    ok && return false
+    _RECUR_GUARD_TRIP_COUNT[] += 1
+    return true
+end
+
 # Exact midpoint lift to an Acb at precision p (the working-precision midpoints
 # DEFINE the evaluation problem; p ≥ source bits ⇒ conversion is exact).
 function _acb_at(z::Complex{Arb}, p::Int)
@@ -485,7 +525,25 @@ end
 # Re(a) ≫ |c|/4; ~0.2–0.8|c| for imaginary c (real ω).  0.7(|c|+Re₊c)+64
 # lands the first call at-or-above the certified target in the common cases;
 # the escalation loop absorbs the rest by the measured deficit.
-_u_loss_estimate(c64::ComplexF64) = 64 + ceil(Int, 0.7 * (abs(c64) + max(real(c64), 0.0)))
+# Non-finite midpoints (degenerate inputs) and absurdly large |c| are clamped
+# so the estimate can never throw (ceil(Int, NaN) → InexactError) or drive the
+# seed precision past any sane bound (issue R14a).
+function _u_loss_estimate(c64::ComplexF64)
+    y = 0.7 * (abs(c64) + max(real(c64), 0.0))
+    return 64 + (isfinite(y) ? ceil(Int, min(y, 2.0^20)) : 0)
+end
+
+# Certified accuracy (bits) of an escalation-seed ball, made SAFE for the
+# escalation arithmetic (issue R14a): Arblib.rel_accuracy_bits returns
+# ±(2^63−1) for degenerate balls — +typemax for exact zero/NaN/Inf midpoints
+# (radius 0), −typemax for zero/non-finite midpoints with a finite radius —
+# and the raw value would either falsely certify a non-finite ball or
+# overflow `p + (need − acc)` into a negative precision (→ crash).  Clamp to
+# [−2^20, p−4] and treat any non-finite ball as having no usable accuracy.
+function _seed_acc_bits(H::Acb, p::Int)
+    isfinite(H) || return -(1 << 20)
+    return Int(clamp(Arblib.rel_accuracy_bits(H), -(1 << 20), p - 4))
+end
 
 """
     _hu_seed_acb(hp, n, need) -> (H::Acb, acc::Int)
@@ -506,7 +564,7 @@ function _hu_seed_acb(hp::HUParams, n::Int, need::Int)
         H = Acb(0; prec=p)
         Arblib.pow!(H, cA, n; prec=p)
         Arblib.mul!(H, H, U; prec=p)
-        acc = min(Int(Arblib.rel_accuracy_bits(H)), p - 4)
+        acc = _seed_acc_bits(H, p)
         acc >= need && return H, acc
         if acc > bacc
             best = H; bacc = acc
@@ -550,7 +608,7 @@ function _dhu_seed_acb(hp::HUParams, n::Int, need::Int, Hraw::Union{Nothing,Acb}
             H
         end
         D = Acb(0, -2; prec=p) * ((n / cA) * Hn - term2)
-        acc = min(Int(Arblib.rel_accuracy_bits(D)), p - 4)
+        acc = _seed_acc_bits(D, p)
         acc >= need && return D, acc
         if acc > bacc
             best = D; bacc = acc
