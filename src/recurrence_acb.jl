@@ -297,7 +297,12 @@ function _compute_fn_acb_vec(p, ν; nmax::Int=80, nmax_cf::Int=2000, tol::Real=-
     # through it (same gating pattern as the monodromy resonance gate).
     νm = Complex{BigFloat}(ν)
     if abs(imag(νm)) < 1e-3 && abs(real(νm) - round(real(νm))) < 1e-3
-        f = compute_fn(p, ν; nmax=nmax, nmax_cf=nmax_cf, tol=tol)
+        # tol is the native LENTZ CONVERGENCE tolerance here; the generic
+        # compute_fn's `tol` kwarg means series TRUNCATION with zero-fill — a
+        # different semantic entirely.  Forward tol=-1 (full 2·nmax sum, default
+        # 16·eps Lentz convergence) so the "no truncation" contract holds on
+        # this fallback path too.
+        f = compute_fn(p, ν; nmax=nmax, nmax_cf=nmax_cf, tol=-1)
         fv = Vector{Acb}(undef, 2*nmax + 1)
         for n in -nmax:nmax
             fv[n + nmax + 1] = Acb(f[n]; prec=prec)
@@ -341,6 +346,12 @@ _fn_dict_from_vec(fv::Vector{Acb}, nmax::Int) = Dict{Int, Complex{Arb}}(
 Native-Acb evaluation of the minimal solution f^ν_n for -nmax ≤ n ≤ nmax
 (f_0 = 1).  Full 2·nmax sum (no truncation).  Drop-in for `compute_fn` on an
 `MSTParams{Arb}`; values returned as `Complex{Arb}` to match the generic path.
+
+`tol` is the LENTZ CONVERGENCE tolerance for the anchor continued-fraction
+evaluations (|Δ − 1| < tol); `tol ≤ 0` (default) uses 16·eps at the working
+precision.  It is NOT the truncation tolerance of the generic `compute_fn` —
+no entry is ever zero-filled, on either the native path or the
+near-integer-ν generic fallback.
 
 The CF ratios come from ONE anchor Lentz call per direction plus O(1) in-place
 peeling per n ([`_cf_ratios_acb!`](@ref)) — the same O(nmax·depth) → O(nmax+depth)

@@ -27,7 +27,10 @@ Parameters for waveform computation.
 # Fields
 - `s`, `l`, `m`: spin weight and angular mode numbers
 - `a`: Kerr spin parameter (0 ≤ a < 1)
-- `N`: number of frequency grid points (default: 3000)
+- `N`: number of frequency grid points (default: 3000).  An ODD `N` is bumped
+       to `N+1`: the half-integer grid must be symmetric about ω=0
+       (`ω_grid[i] = -ω_grid[N+1-i]`) for the G(-ω)=conj G(ω) mirror, which
+       only holds for even `N`.
 - `ω_max`: frequency cutoff in units of M⁻¹ (default: 6.0)
 - `t_ini`: start time (default: -100.0 M)
 - `t_max`: end time (default: 600.0 M)
@@ -109,16 +112,33 @@ end
 """
     green_function(p::WaveformParams, ω)
 
-Evaluate G(ω) = B^ref / (2iω B^inc).
+Evaluate G(ω) = B^ref / (2iω B^inc) at a REAL, NONZERO frequency ω.
 
 For negative ω, enforces the reality condition G(-ω) = conj(G(ω)),
 which makes the time-domain waveform ψ(t) real-valued.  This is the
 appropriate convention for the gravitational-wave signal at a fixed
 sky position (combining m and -m contributions).
+
+Contract (throws `ArgumentError` otherwise):
+- `Im(ω)` must be zero.  This function is defined on the real frequency
+  axis only; the G(-ω)=conj G(ω) reality condition does not extend off
+  axis, so a complex ω is NOT silently projected onto the real axis.
+- `ω ≠ 0`.  G has a pole/branch point at ω = 0 (the 1/(2iω) prefactor and
+  the ω → 0 limit of the MST amplitudes), so no finite value exists there;
+  the half-integer grid used by `compute_waveform` avoids ω = 0 by design.
 """
 function green_function(p::WaveformParams, ω)
-    G_pos = _green_pos(p, abs(real(ω)))
-    return real(ω) >= 0 ? G_pos : conj(G_pos)
+    iszero(imag(ω)) || throw(ArgumentError(
+        "green_function: ω = $ω has nonzero imaginary part; G(ω) is defined " *
+        "on the real frequency axis only (the G(-ω)=conj G(ω) reality " *
+        "condition does not hold off axis)"))
+    ω_r = real(ω)
+    iszero(ω_r) && throw(ArgumentError(
+        "green_function: ω = 0 is a pole/branch point of G(ω) = " *
+        "B^ref/(2iω B^inc); no finite value exists (the half-integer grid " *
+        "of compute_waveform avoids ω = 0 by design)"))
+    G_pos = _green_pos(p, abs(ω_r))
+    return ω_r >= 0 ? G_pos : conj(G_pos)
 end
 
 # ============================================================

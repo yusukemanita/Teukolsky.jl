@@ -58,10 +58,17 @@ using Teukolsky
         ν, p = compute_nu(s, l, m, a, ω)
         fn = compute_fn(p, ν)
 
-        for r in [3.0, 5.0, 10.0, 50.0]
+        for r in [3.0, 5.0, 10.0]
             val = Rin(p, ν, fn, r)
             @test isfinite(val)
         end
+        # r=50 in Float64 sits beyond the certified cancellation floor (the
+        # 2F1 term peak exceeds the final sum by ≫ 1/√eps): Rin now raises an
+        # honest error instead of returning the old silently-unconverged value
+        # (issue R1; see test_radial_convergence.jl), and the value IS
+        # recoverable by explicitly accepting a looser tolerance.
+        @test_throws ErrorException Rin(p, ν, fn, 50.0)
+        @test isfinite(Rin(p, ν, fn, 50.0; tol=1e-3))
     end
 
     @testset "dRin — basic evaluation" begin
@@ -261,3 +268,40 @@ include("test_monodromy_depth.jl")
 # grid (PIA σ≤16 incl. resonant 4σ∈ℤ, complex angles, integer/near-integer ν),
 # and end-to-end Rup/dRup vs an independent-π direct-sum reference.
 include("test_hu_evaluation.jl")
+
+# R1/R6: Rin/dRin converge-or-error (adaptive fn extension + cancellation-floor
+# certification; the horizon 2F1 terms peak at n ≈ 2.3|x| and the tail cancels
+# the peak) and the decidable Arb recurrence-instability guards.
+include("test_radial_convergence.jl")
+
+# R10: Rdown — certified-HU wiring, r^{-1} e^{-iωr*} asymptotics (power law +
+# unit ingoing amplitude), 2×-precision value arbiter, ODE-residual arbiter.
+include("test_rdown.jl")
+
+# R14a: degenerate-input robustness (rel_accuracy_bits clamping in the
+# escalation seeds; NaN/Inf/huge-b propagation in hypergeometric_U).
+include("test_hypgeom_degenerate.jl")
+
+# Geodesic/elliptic bug-fix regressions: Carlson m=1 iteration cap +
+# domain handling (G2), polar-orbit φ (G3), working-precision π in the
+# trajectory (G7a), near-polar cancellation (G9), extremal-spin guard (G14b).
+include("test_geo_regressions.jl")
+
+# Adaptive angular basis (A4+A5): l>l_max BoundsError, l==l_max zero-buffer
+# truncation, calibrated l_max margin (floor < 2^-prec), one-λ threading,
+# and the branch-walk ambiguity diagnostics (A6-edge).
+include("test_lmax_adequacy.jl")
+
+# sYlm high-l stability (A8): promoted-precision Goldberg sum vs BigFloat-512,
+# uniform bound, orthonormality, unchanged type-generic paths.
+include("test_sylm_stability.jl")
+
+# Full-precision π in the s=-2 fluxes (A7b): BigFloat-256 vs exact-π rebuild,
+# Float64 parity, and a source sweep for Float64-π literals.
+include("test_flux_pi_precision.jl")
+
+# Guard/contract regressions T11–T14: compute_Aminus_acb full (nmin,nmax)
+# contract, compute_fn_acb tol semantics at the near-integer-ν gate,
+# gamma_ratio for Complex{BigFloat}, green_function real-axis/ω≠0 contract,
+# Integer(::MultiFloat) InexactError semantics.
+include("test_guards_t11_t14.jl")

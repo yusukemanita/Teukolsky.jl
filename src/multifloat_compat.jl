@@ -88,9 +88,30 @@ end
 # NOT the Integer conversion of the result, so `round(Int, ::MultiFloat)` — used
 # in the radial hypergeometric path (the near-integer-b guard in
 # hypergeometric.jl) — hits a missing `Int64(::MultiFloat)` and the radial Rin/Rup
-# fail under the MultiFloat backend.  Route through the leading Float64 limb,
-# which is exact for the small integer-valued arguments these call sites produce.
-(::Type{I})(x::MultiFloat) where {I<:Integer} = I(Float64(x))
+# fail under the MultiFloat backend.
+#
+# Proper InexactError semantics (Base's Integer-conversion contract): the
+# MultiFloat's EXACT value — the limb sum, reconstructed losslessly in a wide
+# BigFloat — must be an integer representable in `I`, else InexactError.  The
+# old `I(Float64(x))` leading-limb shortcut silently truncated the tail limbs
+# (Int(Float64x2(1)+1e-25) === 1) and was off by one beyond 2^53
+# (Int(Float64x2(2^60)+1) dropped the +1).  `round(Int, ::MultiFloat)` — the
+# actual internal need — still works: `round(x)` yields an exactly
+# integer-valued MultiFloat, which converts without error.
+function (::Type{I})(x::MultiFloat{T,N}) where {I<:Integer,T,N}
+    isfinite(x) || throw(InexactError(Symbol(I), I, x))
+    # Any finite sum of Float64 limbs is exactly representable in ≤ 2200 bits
+    # (full double exponent span 2^1024 … 2^-1074), so this reconstruction —
+    # and hence the integer check below — is EXACT.
+    b = setprecision(BigFloat, 2200) do
+        s = BigFloat(0)
+        for limb in x._limbs
+            s += limb
+        end
+        s
+    end
+    return I(BigInt(b))   # InexactError if non-integer or outside typemin/max(I)
+end
 
 # ============================================================
 #  Precision-backend dispatch  (Float64 / BigFloat / MultiFloat)

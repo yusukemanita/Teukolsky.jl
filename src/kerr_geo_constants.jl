@@ -112,24 +112,32 @@ function kerr_geo_energy(a, p, e, x)
     end
 
     # --- generic (e > 0, generic x): Schmidt determinant method ---
+    # NEAR-POLAR CONDITIONING: the textbook h(r) = r(r-2) + zm²/(1-zm²)·Δ
+    # recomputes 1 - zm² = 1 - (1 - x²) and cancels catastrophically for
+    # x → 0 (total loss below x ≈ 1e-8 in Float64).  We use the scaled
+    # H(r) = x² h(r), which is polynomial in x², and push the exact powers
+    # of x² through the Schmidt determinants: with κ,ρ,σ (linear in H)
+    # picking up a factor x² each, E² is algebraically identical to the
+    # original but free of any 1 - zm² subtraction.
     r1 = p / (1 - e)
     r2 = p / (1 + e)
-    zm2 = 1 - x^2
+    x2 = x^2
+    zm2 = (1 - x) * (1 + x)                # 1 - x², exact-product form
     Δ(r) = r^2 - 2 * r + a^2
     f(r) = r^4 + a^2 * (r * (r + 2) + zm2 * Δ(r))
     g(r) = 2 * a * r
-    h(r) = r * (r - 2) + zm2 / (1 - zm2) * Δ(r)
+    H(r) = r * (r - 2) * x2 + zm2 * Δ(r)   # = x² h(r)
     d(r) = (r^2 + a^2 * zm2) * Δ(r)
 
-    κ = d(r1) * h(r2) - h(r1) * d(r2)
+    κ = d(r1) * H(r2) - H(r1) * d(r2)      # = x² · (Schmidt κ)
     ε = d(r1) * g(r2) - g(r1) * d(r2)
-    ρ = f(r1) * h(r2) - h(r1) * f(r2)
+    ρ = f(r1) * H(r2) - H(r1) * f(r2)      # = x² · (Schmidt ρ)
     η = f(r1) * g(r2) - g(r1) * f(r2)
-    σ = g(r1) * h(r2) - h(r1) * g(r2)
+    σ = g(r1) * H(r2) - H(r1) * g(r2)      # = x² · (Schmidt σ)
 
-    return sqrt((κ * ρ + 2 * ε * σ -
-                 2 * x * sqrt(σ * (σ * ε^2 + ρ * ε * κ - η * κ^2) / x^2)) /
-                (ρ^2 + 4 * η * σ))
+    return sqrt((κ * ρ + 2 * ε * σ * x2 -
+                 2 * x * sqrt(σ * (σ * ε^2 * x2 + ρ * ε * κ - η * κ^2))) /
+                (ρ^2 + 4 * η * σ * x2))
 end
 
 # ------------------------------------------------------------
@@ -180,15 +188,20 @@ function kerr_geo_angular_momentum(a, p, e, x)
     end
 
     # --- spherical-generic and generic: use the r1 turning point ---
+    # Same near-polar reformulation as the energy: H = x² h is polynomial in
+    # x², and L = (-En g x² + x √((En²f - d) H + En² g² x²)) / H is exactly
+    # the original expression with the powers of x² made explicit (the
+    # x·√(…/x²) of the original keeps the sign of x, as does x·√(…) here).
     En = kerr_geo_energy(a, p, e, x)
     r1 = p / (1 - e)            # = p for the spherical (e = 0) case
-    zm2 = 1 - x^2
+    x2 = x^2
+    zm2 = (1 - x) * (1 + x)     # 1 - x², exact-product form
     Δ = r1^2 - 2 * r1 + a^2
     f = r1^4 + a^2 * (r1 * (r1 + 2) + zm2 * Δ)
     g = 2 * a * r1
-    h = r1 * (r1 - 2) + zm2 / (1 - zm2) * Δ
+    H = r1 * (r1 - 2) * x2 + zm2 * Δ       # = x² h
     d = (r1^2 + a^2 * zm2) * Δ
-    return (-En * g + x * sqrt((-d * h + En^2 * (g^2 + f * h)) / x^2)) / h
+    return (-En * g * x2 + x * sqrt((En^2 * f - d) * H + En^2 * g^2 * x2)) / H
 end
 
 # ------------------------------------------------------------
@@ -232,10 +245,12 @@ function kerr_geo_carter_constant(a, p, e, x)
     end
 
     # --- spherical-generic and generic ---
+    # 1 - zm² = x² exactly: divide by x² directly ((L/x)² is smooth in x
+    # since L ∝ x near the pole) instead of recomputing 1 - (1 - x²).
     En = kerr_geo_energy(a, p, e, x)
     L = kerr_geo_angular_momentum(a, p, e, x)
-    zm2 = 1 - x^2
-    return zm2 * (a^2 * (1 - En^2) + L^2 / (1 - zm2))
+    zm2 = (1 - x) * (1 + x)     # 1 - x², exact-product form
+    return zm2 * (a^2 * (1 - En^2) + (L / x)^2)
 end
 
 # ------------------------------------------------------------

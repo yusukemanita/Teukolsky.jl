@@ -155,8 +155,39 @@ function _rayleigh_refine(M::AbstractMatrix{Complex{Arb}}, μ::Complex{Arb},
     return μ, v
 end
 
+# ── Adaptive angular basis size (Issues A4/A5) ───────────────────────────────
+# Truncating the spherical-spheroidal ℓ′ basis at l_max leaves a super-
+# exponentially small error in λ.  Measured decay (calibrated at prec ∈
+# {53, 256, 512} bits and |c| ∈ {1, 3.5, 7, 10, 14}, worst case l = 2; see
+# test/test_lmax_adequacy.jl) follows the perturbative estimate
+#     err(k) ≈ (e·|c| / 4k)^{2k}      for k = l_max − l − ⌈|c|⌉ buffer levels.
+# `_swsh_lmax_margin` picks the smallest k with
+#     2k · ln(4k / (e·max(|c|, 0.5))) ≥ 1.2·prec·ln2 + 16,
+# which exceeds the measured need at every calibration point (by 4–14 levels,
+# i.e. many orders of magnitude of the super-exponential decay).
+function _swsh_lmax_margin(prec::Int, cabs::Real)
+    c      = max(Float64(cabs), 0.5)
+    target = 1.2 * prec * log(2.0) + 16.0
+    k      = 8
+    while 2k * log(max(4k / (ℯ * c), 1.25)) < target
+        k += 2
+        k > 100_000 && error("_swsh_lmax_margin: no adequate angular basis " *
+                             "margin found (|c| = $cabs, prec = $prec bits)")
+    end
+    return k
+end
+
+# Effective l_max: at least the user request, at least the legacy default (20),
+# and always large enough that the λ truncation floor sits below 2^-prec of the
+# working type.  `l_max ≤ 0` (the default) means "automatic only".
+function _swsh_lmax_auto(R::Type, l::Int, cabs::Real, l_max::Int)
+    prec = round(Int, -log2(Float64(eps(R))))
+    auto = l + ceil(Int, Float64(cabs)) + _swsh_lmax_margin(prec, cabs)
+    return max(l_max, auto, 20)
+end
+
 """
-    _swsh_eigen(s, l, m, a, ω; l_max=20) -> (λ, ells, C)
+    _swsh_eigen(s, l, m, a, ω; l_max=0) -> (λ, ells, C)
 
 Solve the spherical-spheroidal coupling eigenproblem (BCS 2009, arXiv:0905.2975)
 and return the spin-weighted spheroidal eigenvalue `λ` (= A_lm, the angular
@@ -166,15 +197,29 @@ giving S_lm → ₛY_lm as aω→0). The spheroidal harmonic is then
 
     S_lm(θ,φ) = Σ_{ℓ′} C[ℓ′] · ₛY_{ℓ′m}(θ,φ).
 
+`l_max ≤ 0` (default) sizes the ℓ′ basis automatically so the truncation error
+in λ sits below the working precision (calibrated; see `_swsh_lmax_margin`).
+An explicit `l_max > 0` acts as a lower bound on the basis and is widened when
+inadequate, so `l` can never fall on or beyond the basis edge.
+
 At higher precision the Float64 LAPACK eigenpair is refined to working precision
 by Rayleigh-quotient iteration.
 """
-function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
+function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=0)
     R = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))))
     c = R(a) * Complex{R}(complex(ω))
 
     l_min = max(abs(m), abs(s))
-    ells  = l_min:l_max
+    l ≥ l_min || throw(ArgumentError("_swsh_eigen: need l ≥ max(|m|, |s|) = " *
+                                     "$l_min (got s=$s, l=$l, m=$m)"))
+    l_max_eff = _swsh_lmax_auto(R, l, abs(c), l_max)
+    # Unreachable by construction (auto ≥ l + margin ≥ l + 8); kept as a hard
+    # guard so a future regression fails loudly instead of returning a silently
+    # truncated λ (the old l == l_max zero-buffer bug) or a raw BoundsError.
+    l_max_eff ≥ l + 4 && l_max_eff ≥ l_min + 1 ||
+        error("_swsh_eigen: angular basis l_max=$l_max_eff cannot resolve " *
+              "l=$l (s=$s, m=$m, |aω|=$(Float64(abs(c)))) — auto-widening failed")
+    ells  = l_min:l_max_eff
     il    = l - l_min + 1          # index of the ℓ′=ℓ (dominant) component
     N     = length(ells)
 
@@ -203,15 +248,26 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
         h    = 0.25                                        # max |Δc| per step
         hmin = h / 64
         t    = 0.0
+        warned = false
         while t < 1.0
             t2 = min(t + h/max(abs(c64), eps()), 1.0)
             Mt = [M_matrix_elem(s, t2*c64, m, li, lj) for li in ells, lj in ells]
             Ft = eigen(Mt)
             ovl = [abs(dot(v_prev, view(Ft.vectors, :, j))) for j in 1:N]
             k2  = argmax(ovl)
-            if ovl[k2] < 0.75 && (t2 - t)*abs(c64) > hmin
-                h /= 2                                     # ambiguous match → refine step
-                continue
+            if ovl[k2] < 0.75
+                if (t2 - t)*abs(c64) > hmin
+                    h /= 2                                 # ambiguous match → refine step
+                    continue
+                elseif !warned
+                    # Step is at the hmin floor (or the final clamped step): the
+                    # ambiguous match is accepted, as before — but no longer
+                    # silently, so near-degenerate λ crossings are diagnosable.
+                    @warn "_swsh_eigen: ambiguous eigenvector match accepted at " *
+                          "the minimum continuation step (near-degenerate λ " *
+                          "crossing?)" overlap=ovl[k2] s=s l=l m=m aω=c64 t=t2
+                    warned = true
+                end
             end
             v_prev = Ft.vectors[:, k2]
             Floc, k = Ft, k2
@@ -242,12 +298,15 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=20)
 end
 
 """
-    compute_lambda(s, l, m, a, ω; l_max=20)
+    compute_lambda(s, l, m, a, ω; l_max=0)
 
 Spin-weighted spheroidal eigenvalue λ = A_lm (angular separation constant), to
 working precision (BCS 2009 spectral matrix + Rayleigh-quotient refinement).
+`l_max ≤ 0` (default) sizes the ℓ′ basis adaptively so the truncation error
+sits below the working precision; an explicit `l_max > 0` is a lower bound on
+the basis (widened when inadequate).
 """
-compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20) =
+compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=0) =
     _swsh_eigen(s, l, m, a, ω; l_max=l_max)[1]
 
 # ============================================================
@@ -255,14 +314,16 @@ compute_lambda(s::Int, l::Int, m::Int, a, ω; l_max::Int=20) =
 # ============================================================
 
 """
-    MSTParams(s, l, m, a, ω; solve_lambda=true, l_max=20)
+    MSTParams(s, l, m, a, ω; solve_lambda=true, l_max=0)
 
 Construct MST parameters. By default, solves the angular eigenvalue λ
 self-consistently via matrix diagonalization (recommended for |aω| > 0.1).
 Set `solve_lambda=false` to use the O((aω)²) perturbative approximation.
+`l_max ≤ 0` (default) sizes the angular basis adaptively (see
+[`compute_lambda`](@ref)); an explicit `l_max > 0` is a lower bound.
 """
 function MSTParams(s::Int, l::Int, m::Int, a, ω;
-                   solve_lambda::Bool=true, l_max::Int=20)
+                   solve_lambda::Bool=true, l_max::Int=0)
     R   = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))))
     a_r = R(a)
     ω_c = Complex{R}(complex(ω))

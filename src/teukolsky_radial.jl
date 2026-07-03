@@ -79,7 +79,7 @@ function _validate_modes(s::Int, l::Int, m::Int, a)
 end
 
 """
-    TeukolskyRadial(s, l, m, a, ω; nmax=80, l_max=20)
+    TeukolskyRadial(s, l, m, a, ω; nmax=80, l_max=0)
 
 Construct the homogeneous radial Teukolsky solutions (MST method). Returns a
 NamedTuple with callable `In` and `Up` [`TeukolskyRadialFunction`](@ref)s plus
@@ -91,15 +91,20 @@ shared mode data and the angular harmonic:
     tr.S(θ)                       # spin-weighted spheroidal harmonic S_lm(θ)
 
 Pass BigFloat `a`/`ω` (inside `setprecision`) for an arbitrary-precision solution.
+
+`l_max ≤ 0` (default) sizes the angular ℓ′ basis adaptively (see
+[`compute_lambda`](@ref)); an explicit `l_max > 0` is a lower bound on the
+basis.  The SAME `l_max` is threaded through ν, fn, the amplitudes and the
+angular harmonic, so a single λ is used consistently everywhere.
 """
-function TeukolskyRadial(s::Int, l::Int, m::Int, a, ω; nmax::Int=80, l_max::Int=20)
+function TeukolskyRadial(s::Int, l::Int, m::Int, a, ω; nmax::Int=80, l_max::Int=0)
     _validate_modes(s, l, m, a)
     R    = promote_type(typeof(float(real(a))), typeof(float(real(complex(ω)))))
     a_r  = R(a)
     ω_c  = Complex{R}(complex(ω))
     prec = R <: BigFloat ? precision(a_r) : 0
 
-    amp = compute_amplitudes(s, l, m, a_r, ω_c; nmax=nmax)
+    amp = compute_amplitudes(s, l, m, a_r, ω_c; nmax=nmax, l_max=l_max)
     ν   = amp.ν
     p   = MSTParams(s, l, m, a_r, ω_c; l_max=l_max)
     λ   = p.λ
