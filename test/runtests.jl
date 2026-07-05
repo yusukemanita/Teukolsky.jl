@@ -312,3 +312,9 @@ include("test_guards_t11_t14.jl")
 # every Rup/q̃ through Ctrans), native-core window growth, and the >1074-bit
 # _swsh_lmax_auto crash.
 include("test_rup_apm_convergence.jl")
+
+# Correctness gate for the spheroidal eigensolver (_swsh_eigen): the Float64
+# branch selection is refined to working precision but was never CERTIFIED, so a
+# wrong-but-consistent λ passed silently.  Post-refine identity/residual/gap gate
+# + escalate-or-error branch match; must not false-positive on strong mixing.
+include("test_swsh_eigen_guards.jl")
