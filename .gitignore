@@ -48,3 +48,7 @@ Manifest.toml
 *.fls
 *.out
 CLAUDE.md
+
+# Gpia calculation (branch-cut integral along the positive imaginary axis) — local only
+examples/branchcut_integral_neg.jl
+examples/branchcut_analysis/psi_rprime_integral.jl
