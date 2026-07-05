@@ -155,6 +155,16 @@ function _rayleigh_refine(M::AbstractMatrix{Complex{Arb}}, μ::Complex{Arb},
     return μ, v
 end
 
+# Ball-radius-safe scalars for the correctness gate below: on Arb, certify with
+# MIDPOINTS (a converged residual's ball radius ~N·eps·‖M‖ is itself the tolerance
+# scale, absorbed by the tol headroom); on BigFloat/Real these are the identity.
+# Comparisons must stay in R — Float64(eps(R)) underflows above 1074 bits (cf.
+# _swsh_lmax_auto), which would collapse the tolerance to 0.
+_certmid(x::Real)         = x
+_certmid(x::Arb)          = Arb(Arblib.midref(x))
+_certle(a::Real, b::Real) = a ≤ b
+_certle(a::Arb,  b::Arb)  = _certmid(a) ≤ _certmid(b)
+
 # ── Adaptive angular basis size (Issues A4/A5) ───────────────────────────────
 # Truncating the spherical-spheroidal ℓ′ basis at l_max leaves a super-
 # exponentially small error in λ.  Measured decay (calibrated at prec ∈
@@ -250,10 +260,10 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=0)
     F, idx = let
         v_prev = zeros(ComplexF64, N); v_prev[il] = 1     # e_il = exact c→0 branch
         Floc = nothing; k = 0
-        h    = 0.25                                        # max |Δc| per step
-        hmin = h / 64
-        t    = 0.0
-        warned = false
+        h        = 0.25                                    # max |Δc| per step
+        hmin     = h / 64                                  # current step floor
+        hmin_min = h / 2^24                                # absolute floor (~1.5e-8)
+        t        = 0.0
         while t < 1.0
             t2 = min(t + h/max(abs(c64), eps()), 1.0)
             Mt = [M_matrix_elem(s, t2*c64, m, li, lj) for li in ells, lj in ells]
@@ -261,17 +271,23 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=0)
             ovl = [abs(dot(v_prev, view(Ft.vectors, :, j))) for j in 1:N]
             k2  = argmax(ovl)
             if ovl[k2] < 0.75
+                # Ambiguous eigenVECTOR match → the l-branch label is not yet
+                # resolved.  ESCALATE the CONTINUATION (finer Δc); never accept,
+                # and never bump the working precision — a Float64 branch-selection
+                # error is a PATH error that more mantissa cannot repair.
                 if (t2 - t)*abs(c64) > hmin
-                    h /= 2                                 # ambiguous match → refine step
+                    h /= 2                                 # room above floor: halve step
                     continue
-                elseif !warned
-                    # Step is at the hmin floor (or the final clamped step): the
-                    # ambiguous match is accepted, as before — but no longer
-                    # silently, so near-degenerate λ crossings are diagnosable.
-                    @warn "_swsh_eigen: ambiguous eigenvector match accepted at " *
-                          "the minimum continuation step (near-degenerate λ " *
-                          "crossing?)" overlap=ovl[k2] s=s l=l m=m aω=c64 t=t2
-                    warned = true
+                elseif hmin > hmin_min
+                    hmin /= 8; h /= 2                      # at floor: push floor down, retry
+                    continue
+                else
+                    error("_swsh_eigen: cannot disambiguate the l=$l spheroidal " *
+                          "branch — best eigenvector overlap $(ovl[k2]) < 0.75 " *
+                          "persists at the continuation floor (Δc≈" *
+                          "$(Float64((t2-t)*abs(c64))); s=$s m=$m aω=$c64). " *
+                          "Near-degenerate/coalescing λ along the c-ray; higher " *
+                          "working precision cannot fix a Float64 branch error.")
                 end
             end
             v_prev = Ft.vectors[:, k2]
@@ -299,6 +315,65 @@ function _swsh_eigen(s::Int, l::Int, m::Int, a, ω; l_max::Int=0)
         MR[i, j] = M_matrix_elem(s, c, m, ells[i], ells[j])
     end
     μ, v = _rayleigh_refine(MR, Complex{R}(F.values[idx]), Complex{R}.(F.vectors[:, idx]))
+
+    # ── Correctness gate (the converge-or-error contract the radial side has) ──
+    # Branch was SELECTED in Float64 above; refinement only polishes it onto the
+    # Complex{R} matrix, checking its own iterate size (line 89/153), not λ
+    # correctness.  A wrong-but-finite λ passes every downstream guard (they check
+    # MST-series self-consistency, not λ).  Certify here, BEFORE returning.
+    seed   = Complex{R}.(F.vectors[:, idx]); seed ./= norm(seed)
+    Mscale = maximum(abs, F.values)                     # ‖M‖ proxy (Float64, ~|c|²+N²)
+
+    # (1) IDENTITY — refined v still spans the tracked branch.  Refinement only
+    #     polishes an already-correct Float64 vector, so seed·refined ≈ 1.  The
+    #     overlap is with the tracked SEED (invariant to strong mixing) — NEVER a
+    #     dominance-at-il test.  Trips only if RQI hopped to a neighbour.
+    ov = Float64(_certmid(abs(dot(seed, v))))
+    ov ≥ 0.9 || error("_swsh_eigen: Rayleigh refinement left the tracked l=$l " *
+        "branch (seed·refined overlap $ov < 0.9; s=$s m=$m aω=$(ComplexF64(c))) " *
+        "— polished onto an adjacent eigenvector.")
+
+    # (2) RESIDUAL — (μ,v) is a genuine eigenpair of the working-precision matrix.
+    #     Backward error of a converged pair is ~N·eps(R)·‖M‖ (Wilkinson); one
+    #     Complex{R} matvec rounds at the same scale.  64·N keeps ~10³ headroom yet
+    #     stays ~10⁴⁵⁰ below any physical wrongness; 64 also absorbs Complex{Arb}
+    #     ball growth in the single matvec.  Kept entirely in R.
+    # Compare SQUARED residual to restol² — no sqrt in the gate path: a converged
+    # residual is at the Arb noise floor, its ball straddles 0, and sqrt of a
+    # zero-straddling ball is NaN (also norm()'s maximum-scaling gives 0/0=NaN).
+    # Σ|·|² is a sum of non-negative squares → midpoint ≥ 0, comparison well-posed.
+    # This also (correctly) fires on GARBAGE-IN: if the caller built a/ω at a ball
+    # radius coarser than the working precision, that radius propagates into MR and
+    # inflates the residual above restol — a converge-or-error refusal, not a false
+    # positive.  Production builds a,ω at the working type inside setprecision.
+    resid2 = sum(abs2, MR * v .- μ .* v)                # ‖(M−μI)v‖², Arb-safe (no sqrt)
+    restol = R(64) * R(N) * eps(R) * R(Mscale)
+    _certle(resid2, restol * restol) || error("_swsh_eigen: refined eigenpair fails " *
+        "its residual certificate (‖(M−μI)v‖²/tol² ≈ " *
+        "$(Float64(_certmid(resid2 / (restol * restol))))" *          # squared ratio ≥ 1, no sqrt
+        "; s=$s l=$l m=$m aω=$(ComplexF64(c))) — refinement did not converge (or a/ω " *
+        "were built at coarser precision than the solve; construct them inside setprecision).")
+
+    # (3) GAP — the tracked eigenvalue was ISOLATED in the Float64 SEED spectrum
+    #     (the precondition making (1)/(2) single out one branch, and the catch for
+    #     a genuine exceptional point the continuation cannot see).  Computed in
+    #     Float64: the seed spectrum only resolves to ~N·eps_f64·‖M‖, so compare
+    #     against THAT Float64 backward-error floor — NOT the (underflowing) R tol.
+    #     If NOT isolated, accept only when the refined v is still clearly separated
+    #     in DIRECTION from every other eigenvector (legit near-degenerate but non-
+    #     defective mode); coalescing eigenvectors ⇒ λ ambiguous ⇒ error.
+    μ64    = ComplexF64(μ)
+    gap    = minimum(abs(μ64 - F.values[j]) for j in 1:N if j != idx)
+    gaptol = 64 * N * eps(Float64) * Mscale
+    if gap ≤ gaptol
+        vf    = ComplexF64.(v)                          # v already unit-norm in R
+        cross = maximum(abs(dot(view(F.vectors, :, j), vf)) for j in 1:N if j != idx)
+        cross < 0.7 || error("_swsh_eigen: eigenvalue not gap-separated and the " *
+            "refined vector aligns with a neighbour (gap $gap ≤ $gaptol, cross-" *
+            "overlap $cross ≥ 0.7; s=$s l=$l m=$m aω=$(ComplexF64(c))) — near-" *
+            "defective λ; branch label not certifiable.")
+    end
+
     return μ - 2*m*c + c^2, ells, fixphase(v)
 end
 
